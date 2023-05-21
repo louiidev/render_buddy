@@ -96,7 +96,7 @@ impl BatchMeshBuild for Text {
                     handle: text_glyph.atlas_info.texture_handle,
                     vertices,
                     indices: QUAD_INDICES.to_vec(),
-                    pipeline_id: ArenaId::first(),
+                    pipeline_handle: Handle::new(ArenaId::first()),
                     z: transform.position.z,
                 }
             })
@@ -124,7 +124,7 @@ impl RenderBuddy {
         text: &Text,
         container_size: Option<Vec2>,
     ) -> Vec<PositionedGlyph> {
-        let texture = self.add_glyphs_to_atlas(text.handle.id, &text.value, text.font_size);
+        let texture = self.add_glyphs_to_atlas(text.handle, &text.value, text.font_size);
 
         if let Some(temp_texture_data) = texture {
             let texture = self.add_texture_bytes(
@@ -134,28 +134,28 @@ impl RenderBuddy {
             );
 
             // Update texture or insert new texture
-            if let Some(texture_id) = self
+            if let Some(handle) = self
                 .fonts
-                .get(text.handle.id)
+                .get(text.handle)
                 .unwrap()
                 .texture_ids
                 .get(&(FloatOrd(text.font_size)))
             {
-                *self.textures.get_mut(texture_id.id).unwrap() = texture;
+                *self.textures.get_mut(*handle).unwrap() = texture;
             } else {
-                let texture_id = self.textures.insert(texture);
+                let texture_handle = self.textures.insert(texture);
 
                 self.fonts
-                    .get_mut(text.handle.id)
+                    .get_mut(text.handle)
                     .unwrap()
                     .texture_ids
-                    .insert(FloatOrd(text.font_size), Handle::new(texture_id));
+                    .insert(FloatOrd(text.font_size), texture_handle);
             }
         }
 
         let texture_handle = *self
             .fonts
-            .get(text.handle.id)
+            .get(text.handle)
             .unwrap()
             .texture_ids
             .get(&(FloatOrd(text.font_size)))
@@ -174,7 +174,7 @@ impl RenderBuddy {
             vertical_align: text.vertical_alignment,
             ..Default::default()
         });
-        let font = &self.fonts.get(text.handle.id).unwrap().font;
+        let font = &self.fonts.get(text.handle).unwrap().font;
         layout.append(&[font], &TextStyle::new(&text.value, text.font_size, 0));
 
         for glyph in layout.glyphs() {
@@ -194,15 +194,15 @@ impl RenderBuddy {
 
     pub(crate) fn add_glyphs_to_atlas(
         &mut self,
-        font_id: ArenaId,
+        font_handle: Handle<Font>,
         text: &str,
         font_size: f32,
     ) -> Option<Image> {
         let font_atlas = self
             .font_atlases
-            .entry((FloatOrd(font_size), font_id))
+            .entry((FloatOrd(font_size), font_handle.id))
             .or_insert_with(|| FontAtlas::new(Vec2::splat(512.0)));
-        let font = self.fonts.get(font_id).unwrap();
+        let font = self.fonts.get(font_handle).unwrap();
         let mut update_texture_data = None;
         for character in text.chars() {
             if !font_atlas.has_glyph(character) {

@@ -8,13 +8,15 @@ use font_atlas::FontAtlas;
 use fonts::{Font, FontSizeKey};
 use glam::{Quat, Vec3, Vec4};
 use mesh::{BatchMeshBuild, Mesh, MeshBuilder, Vertex2D};
+use pipeline::Pipeline;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
+use render_context::RenderContext;
 use texture::{Texture, TextureSamplerType};
 use transform::Transform;
 use wgpu::{
     include_wgsl, BindGroup, BlendState, CommandEncoder, FragmentState, FrontFace, PolygonMode,
-    PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor,
-    Sampler, SurfaceConfiguration, SurfaceTexture, TextureView, VertexState,
+    PrimitiveState, PrimitiveTopology, RenderPass, RenderPipelineDescriptor, Sampler,
+    SurfaceConfiguration, SurfaceTexture, TextureView, VertexState,
 };
 
 pub mod arena;
@@ -26,17 +28,22 @@ mod float_ord;
 mod font_atlas;
 pub mod fonts;
 pub mod mesh;
+pub mod pipeline;
 pub mod rect;
+mod render_context;
 pub mod text;
 pub mod texture;
 pub mod texture_atlas;
 pub mod textured_rect;
 pub mod transform;
 
+pub use glam;
+pub use wgpu;
+
 pub struct RenderBuddy {
     pub(crate) fonts: Arena<Font>,
     pub(crate) font_atlases: HashMap<(FontSizeKey, ArenaId), FontAtlas>,
-    pub(crate) cached_pipelines: Arena<RenderPipeline>,
+    pub(crate) cached_pipelines: Arena<Pipeline>,
     pub(crate) textures: Arena<Texture>,
     pub(crate) device: wgpu::Device,
     pub(crate) meshes: Vec<Mesh>,
@@ -208,7 +215,7 @@ impl RenderBuddy {
         self.meshes.append(&mut meshes);
     }
 
-    pub fn begin(&self) -> (SurfaceTexture, TextureView, CommandEncoder) {
+    pub fn begin(&self) -> RenderContext {
         let output = self
             .surface
             .get_current_texture()
@@ -224,15 +231,14 @@ impl RenderBuddy {
                 label: Some("Render Encoder"),
             });
 
-        (output, view, command_encoder)
+        RenderContext {
+            output,
+            view,
+            command_encoder,
+        }
     }
 
-    pub fn render(
-        &mut self,
-        view: &TextureView,
-        command_encoder: &mut CommandEncoder,
-        clear_color: Option<Vec4>,
-    ) {
+    pub fn render(&mut self, render_context: &mut RenderContext, clear_color: Option<Vec4>) {
         let mesh_prepared_batch = self.prepare_mesh_batch();
         let camera_bind_group = self.camera_data.create_bind_group(&self.device);
 
@@ -248,15 +254,18 @@ impl RenderBuddy {
         };
 
         {
-            let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    resolve_target: None,
-                    ops: wgpu::Operations { load, store: true },
-                })],
-                depth_stencil_attachment: None,
-            });
+            let mut render_pass =
+                render_context
+                    .command_encoder
+                    .begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Render Pass"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &render_context.view,
+                            resolve_target: None,
+                            ops: wgpu::Operations { load, store: true },
+                        })],
+                        depth_stencil_attachment: None,
+                    });
 
             render_prepared_meshes(
                 &mesh_prepared_batch,
@@ -267,12 +276,13 @@ impl RenderBuddy {
         }
     }
 
-    pub fn end_frame(&mut self, command_encoder: CommandEncoder, output: SurfaceTexture) {
-        self.queue.submit(std::iter::once(command_encoder.finish()));
-        output.present();
+    pub fn end_frame(&mut self, render_context: RenderContext) {
+        self.queue
+            .submit(std::iter::once(render_context.command_encoder.finish()));
+        render_context.output.present();
     }
 
-    pub fn resize_surface(&mut self, new_surface_size: (u32, u32)) {
+    pub fn resize(&mut self, new_surface_size: (u32, u32)) {
         self.surface_config.width = new_surface_size.0;
         self.surface_config.height = new_surface_size.1;
         self.surface.configure(&self.device, &self.surface_config);
@@ -356,12 +366,12 @@ impl RenderBuddy {
             multiview: None,
         };
 
-        let id = self
-            .cached_pipelines
-            .insert(self.device.create_render_pipeline(&descriptor));
+        let handle = self.cached_pipelines.insert(Pipeline {
+            render_pipeline: self.device.create_render_pipeline(&descriptor),
+        });
 
         assert!(
-            id == ArenaId::first(),
+            handle.id == ArenaId::first(),
             "Default pipeline is not set to first"
         )
     }
@@ -370,17 +380,17 @@ impl RenderBuddy {
 fn render_prepared_meshes<'a>(
     mesh_batches: &'a Vec<PreparedMeshBatch>,
     render_pass: &mut RenderPass<'a>,
-    cached_pipelines: &'a Arena<RenderPipeline>,
+    cached_pipelines: &'a Arena<Pipeline>,
     camera_bind_group: &'a BindGroup,
 ) {
     let last_pipeline_id = ArenaId::default();
 
     for mesh_batch in mesh_batches {
-        if mesh_batch.pipeline_id != last_pipeline_id {
+        if mesh_batch.pipeline_handle.id != last_pipeline_id {
             let pipeline = cached_pipelines
-                .get(mesh_batch.pipeline_id)
+                .get(mesh_batch.pipeline_handle)
                 .expect("Mesh was given invalid pipeline id");
-            render_pass.set_pipeline(&pipeline);
+            render_pass.set_pipeline(&pipeline.render_pipeline);
         }
 
         render_pass.set_bind_group(0, &camera_bind_group, &[]);

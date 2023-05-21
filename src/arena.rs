@@ -295,9 +295,9 @@ impl<T> Arena<T> {
     /// assert_eq!(arena.get(c), Some(&'C'));
     /// ```
     #[inline]
-    pub fn get(&self, id: ArenaId) -> Option<&T> {
-        match &self.slots.get(id.idx)?.state {
-            State::Used { uid, value } if *uid == id.uid => Some(&self.values[*value]),
+    pub fn get(&self, handle: Handle<T>) -> Option<&T> {
+        match &self.slots.get(handle.id.idx)?.state {
+            State::Used { uid, value } if *uid == handle.id.uid => Some(&self.values[*value]),
             _ => None,
         }
     }
@@ -326,9 +326,9 @@ impl<T> Arena<T> {
     /// assert_eq!(arena.as_slice(), &['B', 'A']);
     /// ```
     #[inline]
-    pub fn get_mut(&mut self, id: ArenaId) -> Option<&mut T> {
-        match &self.slots.get(id.idx)?.state {
-            State::Used { uid, value } if *uid == id.uid => Some(&mut self.values[*value]),
+    pub fn get_mut(&mut self, handle: Handle<T>) -> Option<&mut T> {
+        match &self.slots.get(handle.id.idx)?.state {
+            State::Used { uid, value } if *uid == handle.id.uid => Some(&mut self.values[*value]),
             _ => None,
         }
     }
@@ -397,8 +397,8 @@ impl<T> Arena<T> {
     /// assert!(arena.contains(c));
     /// ```
     #[inline]
-    pub fn contains(&self, id: ArenaId) -> bool {
-        self.get(id).is_some()
+    pub fn contains(&self, handle: Handle<T>) -> bool {
+        self.get(handle).is_some()
     }
 
     /// Returns the ID assigned to the value at the corresponding index, or
@@ -429,13 +429,15 @@ impl<T> Arena<T> {
     ///
     /// ```
     #[inline]
-    pub fn id_at(&self, index: usize) -> Option<ArenaId> {
+    pub fn id_at(&self, index: usize) -> Option<Handle<T>> {
         if index >= self.len() {
             return None;
         }
         let idx = self.slots.get(index)?.value_slot;
         match &self.slots[idx].state {
-            State::Used { uid, value } if *value == index => Some(ArenaId { uid: *uid, idx }),
+            State::Used { uid, value } if *value == index => {
+                Some(Handle::new(ArenaId { uid: *uid, idx }))
+            }
             _ => None,
         }
     }
@@ -499,7 +501,7 @@ impl<T> Arena<T> {
     /// assert_eq!(arena.get(b), Some(&'B'));
     /// ```
     #[inline]
-    pub fn insert(&mut self, value: T) -> ArenaId {
+    pub fn insert(&mut self, value: T) -> Handle<T> {
         self.insert_with(|_| value)
     }
 
@@ -534,7 +536,7 @@ impl<T> Arena<T> {
     /// assert_eq!(arena[bar].id, bar);
     /// assert_eq!(arena[bar].name, "Bar");
     /// ```
-    pub fn insert_with<F>(&mut self, create: F) -> ArenaId
+    pub fn insert_with<F>(&mut self, create: F) -> Handle<T>
     where
         F: FnOnce(ArenaId) -> T,
     {
@@ -572,7 +574,7 @@ impl<T> Arena<T> {
         };
         self.next_uid += 1;
         self.values.push(create(id));
-        id
+        Handle::new(id)
     }
 
     /// Removes the value from the arena assigned to the ID. If the value existed
@@ -589,16 +591,16 @@ impl<T> Arena<T> {
     /// assert_eq!(arena.remove(foo), None);
     ///
     /// ```
-    pub fn remove(&mut self, id: ArenaId) -> Option<T> {
+    pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
         // get the position of the removed value
-        let removed_val = match &self.slots[id.idx].state {
-            State::Used { uid, value } if *uid == id.uid => *value,
+        let removed_val = match &self.slots[handle.id.idx].state {
+            State::Used { uid, value } if *uid == handle.id.uid => *value,
             _ => return None,
         };
 
         // free up the slot of the removed value
-        self.slots[id.idx].state = State::Free {
-            next_free: self.first_free.replace(id.idx),
+        self.slots[handle.id.idx].state = State::Free {
+            next_free: self.first_free.replace(handle.id.idx),
         };
 
         // check if the removed value is the last in the list
@@ -1043,14 +1045,14 @@ impl<T> Index<ArenaId> for Arena<T> {
 
     #[inline]
     fn index(&self, index: ArenaId) -> &Self::Output {
-        self.get(index).unwrap()
+        self.get(Handle::new(index)).unwrap()
     }
 }
 
 impl<T> IndexMut<ArenaId> for Arena<T> {
     #[inline]
     fn index_mut(&mut self, index: ArenaId) -> &mut Self::Output {
-        self.get_mut(index).unwrap()
+        self.get_mut(Handle::new(index)).unwrap()
     }
 }
 
@@ -1243,6 +1245,15 @@ impl<'a> Iterator for Ids<'a> {
 pub struct Handle<T> {
     pub id: ArenaId,
     marker: PhantomData<fn() -> T>,
+}
+
+impl<T> Default for Handle<T> {
+    fn default() -> Self {
+        Self {
+            id: Default::default(),
+            marker: Default::default(),
+        }
+    }
 }
 
 impl<T> Handle<T> {

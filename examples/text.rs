@@ -17,14 +17,10 @@ fn main() {
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::MainEventsCleared => {
-            let (output, view, mut command_encoder) = render_buddy.begin();
+            let mut render_ctx = render_buddy.begin();
             render_buddy.append(Text::new("Hello, Render Buddy!", 32.), Vec3::ZERO);
-            render_buddy.render(
-                &view,
-                &mut command_encoder,
-                Some(Vec4::new(0.1, 0.1, 0.1, 1.)),
-            );
-            render_buddy.end_frame(command_encoder, output);
+            render_buddy.render(&mut render_ctx, Some(Vec4::new(0.1, 0.1, 0.1, 1.)));
+            render_buddy.end_frame(render_ctx);
         }
         Event::RedrawEventsCleared => *control_flow = ControlFlow::Poll,
         Event::WindowEvent {
@@ -33,7 +29,7 @@ fn main() {
         } if window_id == window.id() => match event {
             WindowEvent::CloseRequested {} => *control_flow = ControlFlow::Exit,
             WindowEvent::Resized(physical_size) => {
-                render_buddy.resize_surface((physical_size.width, physical_size.height));
+                render_buddy.resize((physical_size.width, physical_size.height));
             }
             _ => {}
         },

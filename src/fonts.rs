@@ -1,7 +1,8 @@
-use crate::arena::Handle;
+use crate::arena::{ArenaId, Handle};
 use crate::float_ord::FloatOrd;
 use crate::rect::Rect;
 use crate::texture::{Image, Texture};
+use crate::RenderBuddy;
 use core::hash::{Hash, Hasher};
 use fontdue::{Font as ExternalFont, FontResult, Metrics};
 use glam::Vec2;
@@ -59,5 +60,24 @@ impl Font {
         };
 
         (metrics, glyph_image)
+    }
+}
+
+impl RenderBuddy {
+    pub fn add_font(&mut self, font_data: &[u8]) -> FontResult<Handle<Font>> {
+        let font = Font::try_from_bytes(font_data)?;
+
+        Ok(self.fonts.insert(font))
+    }
+
+    pub fn add_font_as_default(&mut self, font_data: &[u8]) -> FontResult<Handle<Font>> {
+        let font = Font::try_from_bytes(font_data)?;
+        let default_id = ArenaId::first();
+        *self
+            .fonts
+            .get_mut(Handle::new(default_id))
+            .expect("Missing default font") = font;
+
+        Ok(Handle::new(default_id))
     }
 }

@@ -50,7 +50,7 @@ impl MeshBuilder for TexturedRect {
     fn build(&self, transform: Transform, rb: &RenderBuddy) -> Mesh {
         let texture = rb
             .textures
-            .get(self.handle.id)
+            .get(self.handle)
             .expect("Mesh is missing texture");
 
         let mut uvs = QUAD_UVS;

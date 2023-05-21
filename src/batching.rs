@@ -1,4 +1,9 @@
-use crate::{arena::ArenaId, mesh::Mesh, RenderBuddy};
+use crate::{
+    arena::{ArenaId, Handle},
+    mesh::Mesh,
+    pipeline::Pipeline,
+    RenderBuddy,
+};
 use wgpu::{util::DeviceExt, BindGroup, Buffer};
 
 #[derive(Debug)]
@@ -7,7 +12,7 @@ pub(crate) struct PreparedMeshBatch {
     pub(crate) index_buffer: Buffer,
     pub(crate) texture_bind_group: BindGroup,
     pub(crate) indices_len: u32,
-    pub(crate) pipeline_id: ArenaId,
+    pub(crate) pipeline_handle: Handle<Pipeline>,
 }
 
 impl RenderBuddy {
@@ -21,7 +26,8 @@ impl RenderBuddy {
         let mut batches: Vec<Mesh> = Vec::new();
 
         for mesh in meshes {
-            if current_batch_texture_id == mesh.handle.id && current_pipeline_id == mesh.pipeline_id
+            if current_batch_texture_id == mesh.handle.id
+                && current_pipeline_id == mesh.pipeline_handle.id
             {
                 let length = batches.len();
 
@@ -36,7 +42,7 @@ impl RenderBuddy {
                 current_mesh.concat(mesh.vertices, indices);
             } else {
                 current_batch_texture_id = mesh.handle.id;
-                current_pipeline_id = mesh.pipeline_id;
+                current_pipeline_id = mesh.pipeline_handle.id;
                 batches.push(mesh);
             }
         }
@@ -60,18 +66,18 @@ impl RenderBuddy {
                             usage: wgpu::BufferUsages::INDEX,
                         });
 
-                let texture = self.textures.get(batch.handle.id).unwrap();
+                let texture = self.textures.get(batch.handle).unwrap();
 
                 let sampler = self.texture_samplers.get(&texture.sampler).unwrap();
 
                 let pipeline = self
                     .cached_pipelines
-                    .get(batch.pipeline_id)
+                    .get(batch.pipeline_handle)
                     .expect("Pipeline is missing for mesh");
 
                 let texture_bind_group =
                     self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        layout: &pipeline.get_bind_group_layout(1),
+                        layout: &pipeline.render_pipeline.get_bind_group_layout(1),
                         entries: &[
                             wgpu::BindGroupEntry {
                                 binding: 0,
@@ -90,7 +96,7 @@ impl RenderBuddy {
                     index_buffer,
                     texture_bind_group,
                     indices_len: batch.indices.len() as _,
-                    pipeline_id: batch.pipeline_id, // TODO: UPDATE THIS
+                    pipeline_handle: batch.pipeline_handle,
                 }
             })
             .collect()

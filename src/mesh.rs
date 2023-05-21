@@ -2,6 +2,7 @@ use glam::Vec2;
 
 use crate::{
     arena::{ArenaId, Handle},
+    pipeline::Pipeline,
     texture::Texture,
     transform::Transform,
     RenderBuddy,
@@ -34,7 +35,7 @@ pub trait BatchMeshBuild {
 #[derive(Debug)]
 pub struct Mesh {
     pub(crate) handle: Handle<Texture>,
-    pub(crate) pipeline_id: ArenaId,
+    pub(crate) pipeline_handle: Handle<Pipeline>,
     pub(crate) vertices: Vec<Vertex2D>,
     pub(crate) indices: Vec<u16>,
     // used for sorting
@@ -48,7 +49,7 @@ impl Mesh {
         z: f32,
     ) -> Self {
         Self {
-            pipeline_id: ArenaId::first(),
+            pipeline_handle: Handle::new(ArenaId::first()),
             handle,
             vertices,
             indices,

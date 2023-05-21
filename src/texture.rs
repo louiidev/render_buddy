@@ -79,10 +79,10 @@ impl RenderBuddy {
             sampler: TextureSamplerType::default(),
         };
 
-        let id = self.textures.insert(texture);
+        let handle: Handle<Texture> = self.textures.insert(texture);
 
         assert!(
-            id == ArenaId::first(),
+            handle.id == ArenaId::first(),
             "Blank texture needs to be first texture inserted"
         );
     }
@@ -98,7 +98,7 @@ impl RenderBuddy {
         sampler: TextureSamplerType,
     ) -> Handle<Texture> {
         let texture = self.add_texture_bytes(bytes, size, sampler);
-        Handle::new(self.textures.insert(texture))
+        self.textures.insert(texture)
     }
 
     pub(crate) fn add_texture_bytes(
@@ -157,7 +157,7 @@ impl RenderBuddy {
         let texture: Texture = self.add_texture_bytes(&image.data, image.dimensions, image.sampler);
         *self
             .textures
-            .get_mut(handle.id)
+            .get_mut(handle)
             .expect("No texture to replace") = texture;
     }
 }
