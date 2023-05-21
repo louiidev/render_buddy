@@ -15,7 +15,7 @@
 //! # Examples
 //!
 //! ```
-//! use arena::Arena;
+//! use render_buddy::arena::Arena;
 //!
 //! // create an arena and add 3 values to it
 //! let mut arena = Arena::new();
@@ -53,7 +53,7 @@
 //! the values in the contiguous slice directly:
 //!
 //! ```
-//! # use arena::Arena;
+//! # use render_buddy::arena::Arena;
 //! let mut arena = Arena::from(['A', 'B', 'C']);
 //!
 //! let mut iter = arena.iter();
@@ -66,7 +66,7 @@
 //! Alternatively, you can iterate over ID/value pairs:
 //!
 //! ```
-//! # use arena::Arena;
+//! # use render_buddy::arena::Arena;
 //! let mut arena = Arena::new();
 //! let a = arena.insert('A');
 //! let b = arena.insert('B');
@@ -82,7 +82,7 @@
 //! Or iterate over just the IDs:
 //!
 //! ```
-//! # use arena::Arena;
+//! # use render_buddy::arena::Arena;
 //! # let mut arena = Arena::new();
 //! # let a = arena.insert('A');
 //! # let b = arena.insert('B');
@@ -126,7 +126,7 @@ impl<T> Arena<T> {
     ///
     /// ```
     /// # #![allow(unused_mut)]
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena: Arena<String> = Arena::new();
     /// ```
     pub const fn new() -> Self {
@@ -144,7 +144,7 @@ impl<T> Arena<T> {
     ///
     /// ```
     /// # #![allow(unused_mut)]
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena: Arena<String> = Arena::with_capacity(1000);
     /// ```
     #[inline]
@@ -162,7 +162,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// assert!(arena.is_empty());
     ///
@@ -179,7 +179,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::from(['A', 'B', 'C']);
     ///
     /// assert_eq!(arena.len(), 3);
@@ -201,7 +201,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::from(['A', 'B', 'C']);
     ///
     /// assert_eq!(arena.slot_count(), 3);
@@ -222,7 +222,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::from(['A', 'B', 'C']);
     ///
     /// assert_eq!(arena.as_slice(), &['A', 'B', 'C']);
@@ -241,7 +241,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena: Arena<i32> = Arena::from([1, 2, 3, 4, 5]);
     ///
     /// assert_eq!(arena.as_mut_slice(), &[1, 2, 3, 4, 5]);
@@ -278,7 +278,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -308,7 +308,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -339,7 +339,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -380,7 +380,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -407,7 +407,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -447,7 +447,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -491,7 +491,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -512,7 +512,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::{Arena, ArenaId};
+    /// # use render_buddy::arena::{Arena, ArenaId};
     /// struct Person {
     ///     id: ArenaId,
     ///     name: &'static str,
@@ -583,7 +583,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let foo = arena.insert("foo");
     ///
@@ -626,7 +626,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::from(['A', 'B', 'C']);
     ///
     /// assert_eq!(arena.remove_at(5), None);
@@ -645,7 +645,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::from(['A', 'B', 'C']);
     ///
     /// assert_eq!(arena.pop(), Some('C'));
@@ -685,7 +685,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::from(['A', 'B', 'C']);
     ///
     /// assert_eq!(arena.len(), 3);
@@ -705,7 +705,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::from(['A', 'B', 'C']);
     ///
     /// assert_eq!(arena.len(), 3);
@@ -726,7 +726,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -757,7 +757,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -838,7 +838,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let c = arena.insert('C');
     /// let a = arena.insert('A');
@@ -871,7 +871,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::from(['A', 'B', 'C']);
     /// arena.insert('D');
     ///
@@ -889,7 +889,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::from([1, 2, 3]);
     ///
     /// for val in arena.iter_mut() {
@@ -908,7 +908,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -933,7 +933,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -966,7 +966,7 @@ impl<T> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let a = arena.insert('A');
     /// let b = arena.insert('B');
@@ -1001,7 +1001,7 @@ impl<T: Ord> Arena<T> {
     /// # Examples
     ///
     /// ```
-    /// # use arena::Arena;
+    /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
     /// let c = arena.insert('C');
     /// let a = arena.insert('A');
