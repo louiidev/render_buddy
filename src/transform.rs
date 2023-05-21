@@ -1,11 +1,12 @@
 use glam::{Mat4, Quat, Vec3};
 
+#[derive(Clone, Debug)]
 pub struct Transform {
-    /// Position of the entity. In 2d, the last value of the `Vec3` is used for z-ordering.
+    /// In 2d, Z is used for z-ordering.
     pub position: Vec3,
-    /// Rotation of the entity.
+    /// Rotation of the object.
     pub rotation: Quat,
-    /// Scale of the entity.
+    /// Scale of the object.
     pub scale: Vec3,
 }
 

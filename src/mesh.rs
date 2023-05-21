@@ -1,6 +1,11 @@
 use glam::Vec2;
 
-use crate::{arena::ArenaId, transform::Transform, RenderBuddy};
+use crate::{
+    arena::{ArenaId, Handle},
+    texture::Texture,
+    transform::Transform,
+    RenderBuddy,
+};
 
 pub const QUAD_INDICES: [u16; 6] = [0, 2, 3, 0, 1, 2];
 
@@ -22,9 +27,13 @@ pub trait MeshBuilder {
     fn build(&self, transform: Transform, rb: &RenderBuddy) -> Mesh;
 }
 
+pub trait BatchMeshBuild {
+    fn build(&self, transform: Transform, rb: &mut RenderBuddy) -> Vec<Mesh>;
+}
+
 #[derive(Debug)]
 pub struct Mesh {
-    pub(crate) texture_id: ArenaId,
+    pub(crate) handle: Handle<Texture>,
     pub(crate) pipeline_id: ArenaId,
     pub(crate) vertices: Vec<Vertex2D>,
     pub(crate) indices: Vec<u16>,
@@ -32,10 +41,15 @@ pub struct Mesh {
     pub(crate) z: f32,
 }
 impl Mesh {
-    pub fn new(texture_id: ArenaId, vertices: Vec<Vertex2D>, indices: Vec<u16>, z: f32) -> Self {
+    pub fn new(
+        handle: Handle<Texture>,
+        vertices: Vec<Vertex2D>,
+        indices: Vec<u16>,
+        z: f32,
+    ) -> Self {
         Self {
             pipeline_id: ArenaId::first(),
-            texture_id,
+            handle,
             vertices,
             indices,
             z,

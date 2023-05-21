@@ -11,7 +11,7 @@ pub struct Rect {
 }
 impl Rect {
     pub(crate) fn size(&self) -> Vec2 {
-        todo!()
+        self.max - self.min
     }
 }
 

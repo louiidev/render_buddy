@@ -1,6 +1,6 @@
 use glam::{Vec3, Vec4};
 use pollster::block_on;
-use render_buddy::{texture::Image, textured_rect::TexturedRect, RenderBuddy};
+use render_buddy::{text::Text, RenderBuddy};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -14,18 +14,11 @@ fn main() {
     let window = window_builder.build(&event_loop).unwrap();
 
     let mut render_buddy = block_on(RenderBuddy::new(&window, (1280, 720))).unwrap();
-    let img = image::load_from_memory(include_bytes!("./assets/bitbuddy.png")).unwrap();
-    let dimensions = (img.width(), img.height());
-    let handle = render_buddy.add_texture(Image {
-        data: img.into_bytes(),
-        dimensions,
-        ..Default::default()
-    });
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::MainEventsCleared => {
             let (output, view, mut command_encoder) = render_buddy.begin();
-            render_buddy.push(TexturedRect::new(handle), Vec3::ZERO);
+            render_buddy.append(Text::new("Hello, Render Buddy!", 32.), Vec3::ZERO);
             render_buddy.render(
                 &view,
                 &mut command_encoder,

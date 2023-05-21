@@ -5,11 +5,12 @@ use crate::{
     mesh::{Mesh, MeshBuilder, Vertex2D, QUAD_INDICES, QUAD_UVS, QUAD_VERTEX_POSITIONS},
     rect::Rect,
     texture::Texture,
+    transform::Transform,
     RenderBuddy,
 };
 
 pub struct TexturedRect {
-    pub texture_id: ArenaId,
+    pub handle: Handle<Texture>,
     pub anchor: Anchor,
     pub color: [f32; 4],
     pub texture_rect: Option<Rect>,
@@ -21,7 +22,7 @@ pub struct TexturedRect {
 impl Default for TexturedRect {
     fn default() -> Self {
         TexturedRect {
-            texture_id: ArenaId::first(),
+            handle: Handle::new(ArenaId::first()),
             anchor: Anchor::default(),
             color: [1., 1., 1., 1.],
             texture_rect: None,
@@ -34,7 +35,7 @@ impl Default for TexturedRect {
 impl TexturedRect {
     pub fn new(handle: Handle<Texture>) -> Self {
         TexturedRect {
-            texture_id: handle.id,
+            handle,
             ..Default::default()
         }
     }
@@ -46,10 +47,10 @@ impl TexturedRect {
 }
 
 impl MeshBuilder for TexturedRect {
-    fn build(&self, transform: crate::transform::Transform, rb: &RenderBuddy) -> Mesh {
+    fn build(&self, transform: Transform, rb: &RenderBuddy) -> Mesh {
         let texture = rb
             .textures
-            .get(self.texture_id)
+            .get(self.handle.id)
             .expect("Mesh is missing texture");
 
         let mut uvs = QUAD_UVS;
@@ -97,7 +98,7 @@ impl MeshBuilder for TexturedRect {
             .collect();
 
         Mesh::new(
-            self.texture_id,
+            self.handle,
             vertices,
             QUAD_INDICES.to_vec(),
             transform.position.z,

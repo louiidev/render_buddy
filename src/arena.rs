@@ -1239,8 +1239,9 @@ impl<'a> Iterator for Ids<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct Handle<T> {
-    pub(crate) id: ArenaId,
+    pub id: ArenaId,
     marker: PhantomData<fn() -> T>,
 }
 

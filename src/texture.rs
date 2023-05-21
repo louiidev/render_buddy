@@ -1,25 +1,39 @@
 use glam::Vec2;
 use std::num::NonZeroU32;
-use wgpu::Extent3d;
+use wgpu::{Extent3d, TextureFormat};
 
 use crate::{
     arena::{ArenaId, Handle},
     RenderBuddy,
 };
 
-#[derive(Default, PartialEq, Hash, Eq, Clone, Copy)]
+#[derive(Default, Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum TextureSamplerType {
     Linear,
     #[default]
     Nearest,
 }
 
+#[derive(Clone)]
 pub struct Image {
     pub data: Vec<u8>,
     pub dimensions: (u32, u32),
     pub sampler: TextureSamplerType,
+    pub format: TextureFormat,
 }
 
+impl Default for Image {
+    fn default() -> Self {
+        Self {
+            data: Default::default(),
+            dimensions: Default::default(),
+            sampler: Default::default(),
+            format: TextureFormat::Rgba8UnormSrgb,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub(crate) view: wgpu::TextureView,
@@ -87,7 +101,7 @@ impl RenderBuddy {
         Handle::new(self.textures.insert(texture))
     }
 
-    fn add_texture_bytes(
+    pub(crate) fn add_texture_bytes(
         &mut self,
         bytes: &[u8],
         size: (u32, u32),

@@ -3,28 +3,39 @@ use std::{collections::HashMap, sync::Arc};
 use arena::{Arena, ArenaId};
 use batching::PreparedMeshBatch;
 use camera::CameraData;
-use glam::Vec4;
-use mesh::{Mesh, MeshBuilder, Vertex2D};
+use errors::RenderBuddyError;
+use font_atlas::FontAtlas;
+use fonts::{Font, FontSizeKey};
+use glam::{Quat, Vec3, Vec4};
+use mesh::{BatchMeshBuild, Mesh, MeshBuilder, Vertex2D};
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use texture::{Texture, TextureSamplerType};
 use transform::Transform;
 use wgpu::{
-    include_wgsl, util::DeviceExt, BindGroup, BlendState, CommandEncoder, FragmentState, FrontFace,
-    PolygonMode, PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline,
-    RenderPipelineDescriptor, Sampler, SurfaceConfiguration, SurfaceTexture, TextureView,
-    VertexState,
+    include_wgsl, BindGroup, BlendState, CommandEncoder, FragmentState, FrontFace, PolygonMode,
+    PrimitiveState, PrimitiveTopology, RenderPass, RenderPipeline, RenderPipelineDescriptor,
+    Sampler, SurfaceConfiguration, SurfaceTexture, TextureView, VertexState,
 };
 
 pub mod arena;
 pub mod batching;
 pub mod camera;
+pub mod dynamic_texture_atlas_builder;
+pub mod errors;
+mod float_ord;
+mod font_atlas;
+pub mod fonts;
 pub mod mesh;
 pub mod rect;
+pub mod text;
 pub mod texture;
+pub mod texture_atlas;
 pub mod textured_rect;
 pub mod transform;
 
 pub struct RenderBuddy {
+    pub(crate) fonts: Arena<Font>,
+    pub(crate) font_atlases: HashMap<(FontSizeKey, ArenaId), FontAtlas>,
     pub(crate) cached_pipelines: Arena<RenderPipeline>,
     pub(crate) textures: Arena<Texture>,
     pub(crate) device: wgpu::Device,
@@ -37,7 +48,7 @@ pub struct RenderBuddy {
 }
 
 impl RenderBuddy {
-    pub async fn new<W>(window: &W, surface_size: (u32, u32)) -> Self
+    pub async fn new<W>(window: &W, surface_size: (u32, u32)) -> Result<Self, RenderBuddyError>
     where
         W: HasRawWindowHandle + HasRawDisplayHandle,
     {
@@ -46,15 +57,18 @@ impl RenderBuddy {
             dx12_shader_compiler: Default::default(),
         });
 
-        let surface = unsafe { instance.create_surface(&window).unwrap() };
-        let adapter = instance
+        let surface = unsafe { instance.create_surface(&window)? };
+        let adapter = match instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             })
             .await
-            .unwrap();
+        {
+            Some(it) => it,
+            None => return Err(RenderBuddyError::new("Unable to request adapter from wgpu")),
+        };
 
         let surface_caps = surface.get_capabilities(&adapter);
 
@@ -78,8 +92,7 @@ impl RenderBuddy {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     features: wgpu::Features::empty(),
-                    // WebGL doesn't support all of wgpu's features, so if
-                    // we're building for the web we'll have to disable some.
+                    // Webgl 2 for web until WGPU is fully supported
                     limits: if cfg!(target_arch = "wasm32") {
                         wgpu::Limits::downlevel_webgl2_defaults()
                     } else {
@@ -87,10 +100,9 @@ impl RenderBuddy {
                     },
                     label: None,
                 },
-                None, // Trace path
+                None,
             )
-            .await
-            .unwrap();
+            .await?;
 
         surface.configure(&device, &surface_config);
 
@@ -127,6 +139,8 @@ impl RenderBuddy {
         });
 
         let mut render_buddy = Self {
+            font_atlases: HashMap::default(),
+            fonts: Arena::new(),
             camera_data: CameraData::new(surface_size, camera_bind_group),
             cached_pipelines: Arena::new(),
             device,
@@ -144,101 +158,54 @@ impl RenderBuddy {
             ]),
         };
 
+        render_buddy.fonts.insert(
+            Font::try_from_bytes(include_bytes!("./default_font/Roboto-Regular.ttf")).unwrap(),
+        );
+
         render_buddy.create_blank_texture();
         render_buddy.create_default_pipeline();
 
-        render_buddy
+        Ok(render_buddy)
     }
 
-    pub fn push(&mut self, mesh: impl MeshBuilder, transform: Transform) {
+    pub fn push(&mut self, mesh: impl MeshBuilder, position: Vec3) {
+        self.push_transform(mesh, Transform::from_position(position));
+    }
+
+    pub fn append(&mut self, meshes: impl BatchMeshBuild, position: Vec3) {
+        self.append_transform(meshes, Transform::from_position(position))
+    }
+
+    pub fn push_rotation(&mut self, mesh: impl MeshBuilder, position: Vec3, rotation: Quat) {
+        self.push_transform(
+            mesh,
+            Transform {
+                position,
+                rotation,
+                ..Transform::IDENTITY
+            },
+        );
+    }
+
+    pub fn push_scale(&mut self, mesh: impl MeshBuilder, position: Vec3, scale: Vec3) {
+        self.push_transform(
+            mesh,
+            Transform {
+                position,
+                scale,
+                ..Transform::IDENTITY
+            },
+        );
+    }
+
+    pub fn push_transform(&mut self, mesh: impl MeshBuilder, transform: Transform) {
         let mesh = mesh.build(transform, &self);
         self.meshes.push(mesh);
     }
 
-    fn prepare_mesh_batch(&mut self) -> Vec<PreparedMeshBatch> {
-        let mut meshes = self.meshes.drain(0..).collect::<Vec<Mesh>>();
-
-        meshes.sort_by(|a, b| a.z.partial_cmp(&b.z).unwrap_or(std::cmp::Ordering::Equal));
-
-        let mut current_batch_texture_id = ArenaId::default();
-        let mut current_pipeline_id = ArenaId::default();
-        let mut batches: Vec<Mesh> = Vec::new();
-
-        for mesh in meshes {
-            if current_batch_texture_id == mesh.texture_id
-                && current_pipeline_id == mesh.pipeline_id
-            {
-                let length = batches.len();
-
-                let current_mesh = &mut batches[length - 1];
-                let vert_count = current_mesh.vertices.len() as u16;
-                let indices = mesh
-                    .indices
-                    .iter()
-                    .map(|index| index + vert_count)
-                    .collect::<Vec<u16>>();
-
-                current_mesh.concat(mesh.vertices, indices);
-            } else {
-                current_batch_texture_id = mesh.texture_id;
-                current_pipeline_id = mesh.pipeline_id;
-                batches.push(mesh);
-            }
-        }
-
-        batches
-            .iter()
-            .map(|batch| {
-                let vertex_buffer =
-                    self.device
-                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("Vertex Buffer"),
-                            contents: bytemuck::cast_slice(&batch.vertices),
-                            usage: wgpu::BufferUsages::VERTEX,
-                        });
-
-                let index_buffer =
-                    self.device
-                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("Index Buffer"),
-                            contents: bytemuck::cast_slice(&batch.indices),
-                            usage: wgpu::BufferUsages::INDEX,
-                        });
-
-                let texture = self.textures.get(batch.texture_id).unwrap();
-
-                let sampler = self.texture_samplers.get(&texture.sampler).unwrap();
-
-                let pipeline = self
-                    .cached_pipelines
-                    .get(batch.pipeline_id)
-                    .expect("Pipeline is missing for mesh");
-
-                let texture_bind_group =
-                    self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        layout: &pipeline.get_bind_group_layout(1),
-                        entries: &[
-                            wgpu::BindGroupEntry {
-                                binding: 0,
-                                resource: wgpu::BindingResource::TextureView(&texture.view),
-                            },
-                            wgpu::BindGroupEntry {
-                                binding: 1,
-                                resource: wgpu::BindingResource::Sampler(sampler),
-                            },
-                        ],
-                        label: None,
-                    });
-
-                PreparedMeshBatch {
-                    vertex_buffer,
-                    index_buffer,
-                    texture_bind_group,
-                    indices_len: batch.indices.len() as _,
-                    pipeline_id: batch.pipeline_id, // TODO: UPDATE THIS
-                }
-            })
-            .collect()
+    pub fn append_transform(&mut self, meshes: impl BatchMeshBuild, transform: Transform) {
+        let mut meshes = meshes.build(transform, self);
+        self.meshes.append(&mut meshes);
     }
 
     pub fn begin(&self) -> (SurfaceTexture, TextureView, CommandEncoder) {
