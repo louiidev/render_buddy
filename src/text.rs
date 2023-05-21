@@ -32,6 +32,11 @@ impl Text {
             ..Default::default()
         }
     }
+
+    pub fn with_color(mut self, color: Vec4) -> Self {
+        self.color = color;
+        self
+    }
 }
 
 impl BatchMeshBuild for Text {

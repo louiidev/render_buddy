@@ -1,6 +1,6 @@
 use glam::{Vec3, Vec4};
 use pollster::block_on;
-use render_buddy::{texture::Image, textured_rect::TexturedRect, RenderBuddy};
+use render_buddy::{sprite::Sprite, texture::Image, RenderBuddy};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -25,7 +25,7 @@ fn main() {
     event_loop.run(move |event, _, control_flow| match event {
         Event::MainEventsCleared => {
             let mut render_ctx = render_buddy.begin();
-            render_buddy.push(TexturedRect::new(handle), Vec3::ZERO);
+            render_buddy.push(Sprite::new(handle), Vec3::ZERO);
             render_buddy.render(&mut render_ctx, Some(Vec4::new(0.1, 0.1, 0.1, 1.)));
             render_buddy.end_frame(render_ctx);
         }

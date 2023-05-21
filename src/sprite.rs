@@ -9,7 +9,8 @@ use crate::{
     RenderBuddy,
 };
 
-pub struct TexturedRect {
+#[derive(Clone, Copy, Debug)]
+pub struct Sprite {
     pub handle: Handle<Texture>,
     pub anchor: Anchor,
     pub color: [f32; 4],
@@ -19,9 +20,9 @@ pub struct TexturedRect {
     pub flip_y: bool,
 }
 
-impl Default for TexturedRect {
+impl Default for Sprite {
     fn default() -> Self {
-        TexturedRect {
+        Sprite {
             handle: Handle::new(ArenaId::first()),
             anchor: Anchor::default(),
             color: [1., 1., 1., 1.],
@@ -32,9 +33,9 @@ impl Default for TexturedRect {
         }
     }
 }
-impl TexturedRect {
+impl Sprite {
     pub fn new(handle: Handle<Texture>) -> Self {
-        TexturedRect {
+        Sprite {
             handle,
             ..Default::default()
         }
@@ -46,7 +47,7 @@ impl TexturedRect {
     }
 }
 
-impl MeshBuilder for TexturedRect {
+impl MeshBuilder for Sprite {
     fn build(&self, transform: Transform, rb: &RenderBuddy) -> Mesh {
         let texture = rb
             .textures

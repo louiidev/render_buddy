@@ -14,9 +14,9 @@ use render_context::RenderContext;
 use texture::{Texture, TextureSamplerType};
 use transform::Transform;
 use wgpu::{
-    include_wgsl, BindGroup, BlendState, CommandEncoder, FragmentState, FrontFace, PolygonMode,
-    PrimitiveState, PrimitiveTopology, RenderPass, RenderPipelineDescriptor, Sampler,
-    SurfaceConfiguration, SurfaceTexture, TextureView, VertexState,
+    include_wgsl, BindGroup, BlendState, FragmentState, FrontFace, PolygonMode, PrimitiveState,
+    PrimitiveTopology, RenderPass, RenderPipelineDescriptor, Sampler, SurfaceConfiguration,
+    VertexState,
 };
 
 pub mod arena;
@@ -31,10 +31,10 @@ pub mod mesh;
 pub mod pipeline;
 pub mod rect;
 mod render_context;
+pub mod sprite;
 pub mod text;
 pub mod texture;
 pub mod texture_atlas;
-pub mod textured_rect;
 pub mod transform;
 
 pub use glam;

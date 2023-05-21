@@ -1,6 +1,6 @@
 use glam::{Mat4, Quat, Vec3};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Transform {
     /// In 2d, Z is used for z-ordering.
     pub position: Vec3,
@@ -8,6 +8,12 @@ pub struct Transform {
     pub rotation: Quat,
     /// Scale of the object.
     pub scale: Vec3,
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
 }
 
 impl Transform {
