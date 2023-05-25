@@ -68,5 +68,6 @@ fn to_rect(rectangle: guillotiere::Rectangle) -> Rect {
     Rect {
         min: IVec2::new(rectangle.min.x, rectangle.min.y).as_vec2(),
         max: IVec2::new(rectangle.max.x, rectangle.max.y).as_vec2(),
+        ..Default::default()
     }
 }

@@ -1,6 +1,6 @@
-use glam::{Vec3, Vec4};
+use glam::{Vec2, Vec3, Vec4};
 use pollster::block_on;
-use render_buddy::{camera::Camera, text::Text, RenderBuddy};
+use render_buddy::{camera::Camera, rect::Rect, RenderBuddy};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -18,7 +18,22 @@ fn main() {
     event_loop.run(move |event, _, control_flow| match event {
         Event::MainEventsCleared => {
             let mut render_ctx = render_buddy.begin();
-            render_buddy.append(Text::new("Hello, Render Buddy!", 32.), Vec3::ZERO);
+            render_buddy.push(
+                Rect::new(Vec2::new(100., 100.), Vec4::new(0.5, 0.5, 0.5, 1.)),
+                Vec3::ZERO,
+            );
+            render_buddy.push(
+                Rect::new(Vec2::new(100., 100.), Vec4::new(0.5, 0.5, 0.5, 0.75)),
+                Vec3::new(25., 25., 0.),
+            );
+            render_buddy.push(
+                Rect::new(Vec2::new(100., 100.), Vec4::new(0.5, 0.5, 0.5, 0.50)),
+                Vec3::new(50., 50., 0.),
+            );
+            render_buddy.push(
+                Rect::new(Vec2::new(100., 100.), Vec4::new(0.5, 0.5, 0.5, 0.25)),
+                Vec3::new(75., 75., 0.),
+            );
             render_buddy.render(
                 &mut render_ctx,
                 Some(Vec4::new(0.2, 0.2, 0.8, 1.)),

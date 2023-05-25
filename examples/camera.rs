@@ -1,6 +1,11 @@
-use glam::{Vec3, Vec4};
+use glam::{Vec2, Vec3, Vec4};
 use pollster::block_on;
-use render_buddy::{camera::Camera, text::Text, RenderBuddy};
+use render_buddy::{
+    camera::{Camera, CameraOrigin},
+    rect::Rect,
+    sprite::Anchor,
+    RenderBuddy,
+};
 use winit::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -15,15 +20,30 @@ fn main() {
 
     let mut render_buddy = block_on(RenderBuddy::new(&window, (1280, 720))).unwrap();
 
+    let default_camera = Camera::orthographic();
+    // Useful for creating UI elements
+    let top_left_camera = Camera::orthographic().with_origin(CameraOrigin::TopLeft);
+
     event_loop.run(move |event, _, control_flow| match event {
         Event::MainEventsCleared => {
             let mut render_ctx = render_buddy.begin();
-            render_buddy.append(Text::new("Hello, Render Buddy!", 32.), Vec3::ZERO);
+            render_buddy.push(
+                Rect::new(Vec2::new(50., 50.), Vec4::new(0.9, 0.2, 0.2, 1.)),
+                Vec3::ZERO,
+            );
             render_buddy.render(
                 &mut render_ctx,
                 Some(Vec4::new(0.2, 0.2, 0.8, 1.)),
-                &Camera::orthographic(),
+                &default_camera,
             );
+
+            render_buddy.push(
+                Rect::new(Vec2::new(150., 150.), Vec4::new(0.2, 0.8, 0.2, 1.))
+                    .with_anchor(Anchor::TopLeft),
+                Vec3::ZERO,
+            );
+            render_buddy.render(&mut render_ctx, None, &top_left_camera);
+
             render_buddy.end_frame(render_ctx);
         }
         Event::RedrawEventsCleared => *control_flow = ControlFlow::Poll,

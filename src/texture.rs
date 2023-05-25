@@ -87,17 +87,22 @@ impl RenderBuddy {
         );
     }
 
+    /// Loads a texture to the GPU
+    /// Returns a handle to the texture ref
     pub fn add_texture(&mut self, image: Image) -> Handle<Texture> {
-        self.add_texture_from_bytes(&image.data, image.dimensions, image.sampler)
+        self.add_texture_from_bytes(&image.data, image.dimensions, image.sampler, image.format)
     }
 
+    /// Loads a texture to the GPU by passing the image bytes
+    /// Must be parsed by a crate like image or something similar
     pub fn add_texture_from_bytes(
         &mut self,
         bytes: &[u8],
         size: (u32, u32),
         sampler: TextureSamplerType,
+        format: TextureFormat,
     ) -> Handle<Texture> {
-        let texture = self.add_texture_bytes(bytes, size, sampler);
+        let texture = self.add_texture_bytes(bytes, size, sampler, format);
         self.textures.insert(texture)
     }
 
@@ -106,6 +111,7 @@ impl RenderBuddy {
         bytes: &[u8],
         size: (u32, u32),
         sampler: TextureSamplerType,
+        format: TextureFormat,
     ) -> Texture {
         let size = Extent3d {
             width: size.0 as _,
@@ -119,7 +125,7 @@ impl RenderBuddy {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         };
@@ -153,8 +159,11 @@ impl RenderBuddy {
         }
     }
 
+    /// Replaces the given texture handle
+    /// Useful for hot reloading
     pub fn replace_texture(&mut self, handle: Handle<Texture>, image: Image) {
-        let texture: Texture = self.add_texture_bytes(&image.data, image.dimensions, image.sampler);
+        let texture: Texture =
+            self.add_texture_bytes(&image.data, image.dimensions, image.sampler, image.format);
         *self
             .textures
             .get_mut(handle)

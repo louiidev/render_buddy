@@ -75,6 +75,7 @@ impl TextureAtlas {
                 let sprite = Rect {
                     min: rect_min,
                     max: rect_min + tile_size,
+                    ..Default::default()
                 };
 
                 textures.push(sprite);

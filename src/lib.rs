@@ -2,22 +2,18 @@ use std::{collections::HashMap, sync::Arc};
 
 use arena::{Arena, ArenaId};
 use batching::PreparedMeshBatch;
-use camera::CameraData;
+use camera::Camera;
 use errors::RenderBuddyError;
 use font_atlas::FontAtlas;
 use fonts::{Font, FontSizeKey};
 use glam::{Quat, Vec3, Vec4};
-use mesh::{BatchMeshBuild, Mesh, MeshBuilder, Vertex2D};
+use mesh::{BatchMeshBuild, Mesh, MeshBuilder};
 use pipeline::Pipeline;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use render_context::RenderContext;
 use texture::{Texture, TextureSamplerType};
 use transform::Transform;
-use wgpu::{
-    include_wgsl, BindGroup, BlendState, FragmentState, FrontFace, PolygonMode, PrimitiveState,
-    PrimitiveTopology, RenderPass, RenderPipelineDescriptor, Sampler, SurfaceConfiguration,
-    VertexState,
-};
+use wgpu::{BindGroup, BindGroupLayout, RenderPass, Sampler, SurfaceConfiguration};
 
 pub mod arena;
 pub mod batching;
@@ -48,14 +44,17 @@ pub struct RenderBuddy {
     pub(crate) device: wgpu::Device,
     pub(crate) meshes: Vec<Mesh>,
     pub(crate) texture_samplers: HashMap<TextureSamplerType, Arc<Sampler>>,
-    pub(crate) camera_data: CameraData,
+    camera_bind_group_layout: BindGroupLayout,
     queue: wgpu::Queue,
     surface: wgpu::Surface,
     surface_config: SurfaceConfiguration,
 }
 
 impl RenderBuddy {
-    pub async fn new<W>(window: &W, surface_size: (u32, u32)) -> Result<Self, RenderBuddyError>
+    /// Creates a  [`RenderBuddy`] Instance
+    /// Creates a WGPU Surface, Instance, Device and Queue
+    /// Requires async to request instance adapter
+    pub async fn new<W>(window: &W, viewport_size: (u32, u32)) -> Result<Self, RenderBuddyError>
     where
         W: HasRawWindowHandle + HasRawDisplayHandle,
     {
@@ -88,8 +87,8 @@ impl RenderBuddy {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: surface_size.0,
-            height: surface_size.1,
+            width: viewport_size.0,
+            height: viewport_size.1,
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: Vec::default(),
@@ -131,24 +130,25 @@ impl RenderBuddy {
             })
         };
 
-        let camera_bind_group = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("camera_bind_group_layout"),
-        });
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
 
         let mut render_buddy = Self {
+            camera_bind_group_layout,
             font_atlases: HashMap::default(),
             fonts: Arena::new(),
-            camera_data: CameraData::new(surface_size, camera_bind_group),
             cached_pipelines: Arena::new(),
             device,
             meshes: Vec::default(),
@@ -170,19 +170,17 @@ impl RenderBuddy {
         );
 
         render_buddy.create_blank_texture();
-        render_buddy.create_default_pipeline();
+        let _default_handle = render_buddy.create_default_pipeline();
 
         Ok(render_buddy)
     }
 
+    /// Pushes a mesh to the render queue, must implement MeshBuilder
     pub fn push(&mut self, mesh: impl MeshBuilder, position: Vec3) {
         self.push_transform(mesh, Transform::from_position(position));
     }
 
-    pub fn append(&mut self, meshes: impl BatchMeshBuild, position: Vec3) {
-        self.append_transform(meshes, Transform::from_position(position))
-    }
-
+    /// Pushes a mesh to the render queue, with a rotation
     pub fn push_rotation(&mut self, mesh: impl MeshBuilder, position: Vec3, rotation: Quat) {
         self.push_transform(
             mesh,
@@ -193,7 +191,7 @@ impl RenderBuddy {
             },
         );
     }
-
+    /// Pushes a mesh to the render queue, with a scale
     pub fn push_scale(&mut self, mesh: impl MeshBuilder, position: Vec3, scale: Vec3) {
         self.push_transform(
             mesh,
@@ -204,17 +202,25 @@ impl RenderBuddy {
             },
         );
     }
-
+    /// Pushes a mesh to the render queue, with a full transform
     pub fn push_transform(&mut self, mesh: impl MeshBuilder, transform: Transform) {
         let mesh = mesh.build(transform, &self);
         self.meshes.push(mesh);
     }
 
+    /// Pushes a group of meshes, useful for pushing a batch of meshes, mainly used for text rendering
+    /// Since each glyph is a separate mesh
+    pub fn append(&mut self, meshes: impl BatchMeshBuild, position: Vec3) {
+        self.append_transform(meshes, Transform::from_position(position))
+    }
+
+    /// Pushes a group of meshes, with a transform
     pub fn append_transform(&mut self, meshes: impl BatchMeshBuild, transform: Transform) {
         let mut meshes = meshes.build(transform, self);
         self.meshes.append(&mut meshes);
     }
 
+    /// Begin the render process by prepping the [`RenderContext`]
     pub fn begin(&self) -> RenderContext {
         let output = self
             .surface
@@ -238,9 +244,20 @@ impl RenderBuddy {
         }
     }
 
-    pub fn render(&mut self, render_context: &mut RenderContext, clear_color: Option<Vec4>) {
+    /// Render the queue
+    /// takes in an optional clear color, potentially useful if you want to call render twice in one frame
+    pub fn render(
+        &mut self,
+        render_context: &mut RenderContext,
+        clear_color: Option<Vec4>,
+        camera: &Camera,
+    ) {
         let mesh_prepared_batch = self.prepare_mesh_batch();
-        let camera_bind_group = self.camera_data.create_bind_group(&self.device);
+        let camera_bind_group = camera.create_bind_group(
+            &self.device,
+            (self.surface_config.width, self.surface_config.height),
+            &self.camera_bind_group_layout,
+        );
 
         let load = if let Some(clear_color) = clear_color {
             wgpu::LoadOp::Clear(wgpu::Color {
@@ -276,104 +293,19 @@ impl RenderBuddy {
         }
     }
 
+    /// Presents the frame to WGPU for rendering
+    /// Drops the [`RenderContext`]
     pub fn end_frame(&mut self, render_context: RenderContext) {
         self.queue
             .submit(std::iter::once(render_context.command_encoder.finish()));
         render_context.output.present();
     }
 
+    /// Should be called when the window has been resized
     pub fn resize(&mut self, new_surface_size: (u32, u32)) {
         self.surface_config.width = new_surface_size.0;
         self.surface_config.height = new_surface_size.1;
         self.surface.configure(&self.device, &self.surface_config);
-        self.camera_data.resize(new_surface_size);
-    }
-
-    fn create_default_pipeline(&mut self) {
-        let shader = self
-            .device
-            .create_shader_module(include_wgsl!("./default_shaders/2d.wgsl"));
-
-        let texture_bind_group_layout =
-            self.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                    label: Some("texture_bind_group_layout"),
-                });
-
-        let render_pipeline_layout =
-            self.device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("2D Render Pipeline Layout"),
-                    bind_group_layouts: &[
-                        &self.camera_data.bind_group_layout,
-                        &texture_bind_group_layout,
-                    ],
-                    push_constant_ranges: &[],
-                });
-
-        let binding: [Option<wgpu::ColorTargetState>; 1] = [Some(wgpu::ColorTargetState {
-            format: self.surface_config.format,
-            blend: Some(BlendState::ALPHA_BLENDING),
-            write_mask: wgpu::ColorWrites::ALL,
-        })];
-
-        let descriptor = RenderPipelineDescriptor {
-            vertex: VertexState {
-                entry_point: "vertex",
-                buffers: &[Vertex2D::desc()],
-                module: &shader,
-            },
-            fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: "fragment",
-                targets: &binding,
-            }),
-            layout: Some(&render_pipeline_layout),
-            primitive: PrimitiveState {
-                front_face: FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: PolygonMode::Fill,
-                conservative: false,
-                topology: PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,                         // 2.
-                mask: !0,                         // 3.
-                alpha_to_coverage_enabled: false, // 4.
-            },
-            label: Some("default_pipeline"),
-            multiview: None,
-        };
-
-        let handle = self.cached_pipelines.insert(Pipeline {
-            render_pipeline: self.device.create_render_pipeline(&descriptor),
-        });
-
-        assert!(
-            handle.id == ArenaId::first(),
-            "Default pipeline is not set to first"
-        )
     }
 }
 

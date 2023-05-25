@@ -1,14 +1,12 @@
 use glam::{Mat4, Quat, Vec2, Vec3};
 use wgpu::{util::DeviceExt, BindGroup, BindGroupLayout, Device};
 
-const DEFAULT_ORTHO_CAMERA_DEPTH: f32 = 1000.0;
+pub const DEFAULT_ORTHO_CAMERA_DEPTH: f32 = 1000.0;
 
-pub struct CameraData {
-    projection: Projection,
+pub struct Camera {
+    pub projection: Projection,
     pub position: Vec3,
     pub rotation: Quat,
-    pub scale: Vec3,
-    pub(crate) bind_group_layout: BindGroupLayout,
 }
 
 #[repr(C)]
@@ -18,28 +16,104 @@ pub struct CameraUniform {
     pub view_proj: [[f32; 4]; 4],
 }
 
-impl CameraData {
-    pub(crate) fn new(surface_size: (u32, u32), bind_group_layout: BindGroupLayout) -> Self {
+impl Camera {
+    /// Overrides the default camera values
+    pub fn set_camera_data(&mut self, camera: Camera) {
+        self.projection = camera.projection;
+        self.position = camera.position;
+        self.rotation = camera.rotation;
+    }
+    /// Sets the camera position
+    /// Remember to set the Z value correctly
+    /// Otherwise things might not render correctly
+    pub fn set_camera_position(&mut self, position: Vec3) {
+        self.position = position;
+    }
+    /// Sets the camera rotation
+    pub fn set_camera_rotation(&mut self, rotation: Quat) {
+        self.rotation = rotation;
+    }
+    /// Sets the projection
+    pub fn set_camera_projection(&mut self, projection: Projection) {
+        self.projection = projection;
+    }
+    /// Sets the camera origin, only works for Orthographic projection
+    pub fn with_origin(mut self, new_origin: CameraOrigin) -> Self {
+        if let Projection::Orthographic { ref mut origin, .. } = self.projection {
+            *origin = new_origin;
+        }
+
+        self
+    }
+    // Sets the projection to perspective
+    pub fn set_projection_perspective(&mut self, vfov: f32, near: f32) {
+        self.set_camera_projection(Projection::Perspective { vfov, near });
+    }
+
+    // Sets the projection to orthographic
+    pub fn set_orthographic_perspective(
+        &mut self,
+        origin: CameraOrigin,
+        target_resolution: Option<Vec2>,
+    ) {
+        self.set_camera_projection(Projection::Orthographic {
+            origin,
+            target_resolution,
+        });
+    }
+    // Sets the projection to custom Matrix
+    pub fn set_custom_projection(&mut self, projection: Mat4) {
+        self.set_camera_projection(Projection::Custom(projection));
+    }
+
+    pub fn get_current_origin(&mut self) -> CameraOrigin {
+        if let Projection::Orthographic { origin, .. } = self.projection {
+            return origin;
+        }
+
+        CameraOrigin::Center
+    }
+}
+
+impl Camera {
+    pub fn orthographic() -> Self {
         Self {
             projection: Projection::Orthographic {
-                size: Vec3::new(
-                    surface_size.0 as f32,
-                    surface_size.1 as f32,
-                    DEFAULT_ORTHO_CAMERA_DEPTH,
-                ),
                 origin: CameraOrigin::default(),
                 target_resolution: None,
             },
-            position: Vec3::ZERO,
+            position: Vec3::new(0., 0., DEFAULT_ORTHO_CAMERA_DEPTH - 0.1),
             rotation: Quat::IDENTITY,
-            scale: Vec3::splat(1.),
-            bind_group_layout,
         }
     }
 
-    pub(crate) fn create_bind_group(&self, device: &Device) -> BindGroup {
-        let projection = self.projection.compute_projection_matrix();
-        let view = Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position);
+    pub(crate) fn create_bind_group(
+        &self,
+        device: &Device,
+        viewport_size: (u32, u32),
+        bind_group_layout: &BindGroupLayout,
+    ) -> BindGroup {
+        let projection = self.compute_projection_matrix(viewport_size);
+
+        let additive = if let Projection::Orthographic { origin, .. } = self.projection {
+            if let CameraOrigin::TopLeft = origin {
+                Vec3::new(
+                    viewport_size.0 as f32 / 2.,
+                    -(viewport_size.1 as f32) / 2.,
+                    0.,
+                )
+            } else {
+                Vec3::ZERO
+            }
+        } else {
+            Vec3::ZERO
+        };
+
+        let view = Mat4::from_scale_rotation_translation(
+            Vec3::splat(1.),
+            self.rotation,
+            self.position + additive,
+        );
         let inverse_view = view.inverse();
         let view_projection = projection * inverse_view;
 
@@ -59,18 +133,54 @@ impl CameraData {
                 resource: camera_buffer.as_entire_binding(),
             }],
             label: Some("Camera bind group"),
-            layout: &self.bind_group_layout,
+            layout: &bind_group_layout,
         })
     }
 
-    pub(crate) fn resize(&mut self, surface_size: (u32, u32)) {
-        if let Projection::Orthographic { ref mut size, .. } = &mut self.projection {
-            *size = Vec3::new(surface_size.0 as f32, surface_size.1 as f32, size.z);
+    pub(crate) fn compute_projection_matrix(&self, viewport_size: (u32, u32)) -> Mat4 {
+        match &self.projection {
+            Projection::Orthographic {
+                target_resolution, ..
+            } => {
+                let (width, height) = if let Some(Vec2 {
+                    x: target_width,
+                    y: target_height,
+                }) = target_resolution.to_owned()
+                {
+                    let (width, height) = viewport_size;
+                    let width = width as f32;
+                    let height = height as f32;
+                    if width * target_height < target_width * height {
+                        (width * target_height / height, target_height)
+                    } else {
+                        (target_width, height * target_width / width)
+                    }
+                } else {
+                    (viewport_size.0 as f32, viewport_size.1 as f32)
+                };
+
+                let near = DEFAULT_ORTHO_CAMERA_DEPTH / 2.0;
+                let half_width = width / 2.0;
+                let half_height = height / 2.0;
+
+                Mat4::orthographic_rh(
+                    -half_width,
+                    half_width,
+                    -half_height,
+                    half_height,
+                    -near,
+                    DEFAULT_ORTHO_CAMERA_DEPTH,
+                )
+            }
+            Projection::Perspective { vfov, near } => {
+                Mat4::perspective_infinite_reverse_rh(vfov.to_radians(), 1.0, *near)
+            }
+            Projection::Custom(custom) => *custom,
         }
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum CameraOrigin {
     #[default]
     Center,
@@ -80,7 +190,6 @@ pub enum CameraOrigin {
 #[derive(Debug, Clone)]
 pub enum Projection {
     Orthographic {
-        size: Vec3,
         origin: CameraOrigin,
         target_resolution: Option<Vec2>,
     },
@@ -91,64 +200,4 @@ pub enum Projection {
         near: f32,
     },
     Custom(Mat4),
-}
-
-impl Projection {
-    pub(crate) fn compute_projection_matrix(&self) -> Mat4 {
-        match self {
-            Projection::Orthographic {
-                size,
-                origin,
-                target_resolution,
-            } => {
-                let (width, height) = if let Some(Vec2 {
-                    x: target_width,
-                    y: target_height,
-                }) = target_resolution.to_owned()
-                {
-                    let Vec3 {
-                        x: width,
-                        y: height,
-                        ..
-                    } = size;
-                    if width * target_height < target_width * height {
-                        (width * target_height / height, target_height)
-                    } else {
-                        (target_width, height * target_width / width)
-                    }
-                } else {
-                    (size.x, size.y)
-                };
-
-                let near = size.z / 2.0;
-                match origin {
-                    CameraOrigin::Center => {
-                        let half_width = width / 2.0;
-                        let half_height = height / 2.0;
-
-                        Mat4::orthographic_rh(
-                            -half_width,
-                            half_width,
-                            -half_height,
-                            half_height,
-                            -near,
-                            DEFAULT_ORTHO_CAMERA_DEPTH,
-                        )
-                    }
-                    CameraOrigin::TopLeft => Mat4::orthographic_rh(
-                        0.,
-                        width,
-                        height,
-                        0.,
-                        near,
-                        DEFAULT_ORTHO_CAMERA_DEPTH,
-                    ),
-                }
-            }
-            Projection::Perspective { vfov, near } => {
-                Mat4::perspective_infinite_reverse_rh(vfov.to_radians(), 1.0, *near)
-            }
-            Projection::Custom(custom) => *custom,
-        }
-    }
 }

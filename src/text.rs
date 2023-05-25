@@ -2,6 +2,7 @@ use fontdue::layout::{
     CoordinateSystem, HorizontalAlign, Layout, LayoutSettings, TextStyle, VerticalAlign,
 };
 use glam::{Vec2, Vec4};
+use wgpu::TextureFormat;
 
 use crate::{
     arena::{ArenaId, Handle},
@@ -136,6 +137,7 @@ impl RenderBuddy {
                 &temp_texture_data.data,
                 temp_texture_data.dimensions,
                 crate::texture::TextureSamplerType::Linear,
+                TextureFormat::Rgba8UnormSrgb,
             );
 
             // Update texture or insert new texture
