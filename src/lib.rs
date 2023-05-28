@@ -1,28 +1,35 @@
 use std::{collections::HashMap, sync::Arc};
 
-use arena::{Arena, ArenaId};
+use arena::{Arena, ArenaId, Handle};
 use batching::PreparedMeshBatch;
+use bind_groups::BindGroupLayoutBuilder;
 use camera::Camera;
 use errors::RenderBuddyError;
 use font_atlas::FontAtlas;
 use fonts::{Font, FontSizeKey};
 use glam::{Quat, Vec3, Vec4};
+use material::DefaultMat;
 use mesh::{BatchMeshBuild, Mesh, MeshBuilder};
 use pipeline::Pipeline;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use render_context::RenderContext;
 use texture::{Texture, TextureSamplerType};
 use transform::Transform;
-use wgpu::{BindGroup, BindGroupLayout, RenderPass, Sampler, SurfaceConfiguration};
+use wgpu::{
+    BindGroup, BindGroupLayout, BindingType, RenderPass, Sampler, ShaderStages,
+    SurfaceConfiguration,
+};
 
 pub mod arena;
 pub mod batching;
+pub mod bind_groups;
 pub mod camera;
 pub mod dynamic_texture_atlas_builder;
 pub mod errors;
 mod float_ord;
 mod font_atlas;
 pub mod fonts;
+pub mod material;
 pub mod mesh;
 pub mod pipeline;
 pub mod rect;
@@ -36,18 +43,24 @@ pub mod transform;
 pub use glam;
 pub use wgpu;
 
+pub struct MaterialMap {
+    default: Handle<Pipeline>,
+}
+
 pub struct RenderBuddy {
     pub(crate) fonts: Arena<Font>,
     pub(crate) font_atlases: HashMap<(FontSizeKey, ArenaId), FontAtlas>,
-    pub(crate) cached_pipelines: Arena<Pipeline>,
     pub(crate) textures: Arena<Texture>,
     pub(crate) device: wgpu::Device,
     pub(crate) meshes: Vec<Mesh>,
     pub(crate) texture_samplers: HashMap<TextureSamplerType, Arc<Sampler>>,
     camera_bind_group_layout: BindGroupLayout,
+    texture_bind_group_layout: BindGroupLayout,
     queue: wgpu::Queue,
     surface: wgpu::Surface,
     surface_config: SurfaceConfiguration,
+    materials: Arena<Pipeline>,
+    pub(crate) material_map: MaterialMap,
 }
 
 impl RenderBuddy {
@@ -130,26 +143,40 @@ impl RenderBuddy {
             })
         };
 
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("camera_bind_group_layout"),
-            });
+        let camera_bind_group_layout = BindGroupLayoutBuilder::new()
+            .append(
+                ShaderStages::VERTEX,
+                BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                None,
+            )
+            .build(&device, Some("camera_bind_group_layout"));
+
+        let texture_bind_group_layout = BindGroupLayoutBuilder::new()
+            .append(
+                ShaderStages::FRAGMENT,
+                BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                None,
+            )
+            .append(
+                ShaderStages::FRAGMENT,
+                BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                None,
+            )
+            .build(&device, None);
 
         let mut render_buddy = Self {
             camera_bind_group_layout,
+            texture_bind_group_layout,
             font_atlases: HashMap::default(),
             fonts: Arena::new(),
-            cached_pipelines: Arena::new(),
             device,
             meshes: Vec::default(),
             textures: Arena::new(),
@@ -163,14 +190,25 @@ impl RenderBuddy {
                     Arc::new(default_sampler_nearest),
                 ),
             ]),
+            materials: Arena::new(),
+            material_map: MaterialMap {
+                default: Handle::default(),
+            },
         };
+
+        let default_mat = DefaultMat {};
+        let render_pipeline = render_buddy.create_pipeline_from_material(&default_mat);
+        let material_handle = render_buddy.materials.insert(Pipeline {
+            render_pipeline,
+            material: Box::from(default_mat),
+        });
+        render_buddy.material_map.default = material_handle;
 
         render_buddy.fonts.insert(
             Font::try_from_bytes(include_bytes!("./default_font/Roboto-Regular.ttf")).unwrap(),
         );
 
         render_buddy.create_blank_texture();
-        let _default_handle = render_buddy.create_default_pipeline();
 
         Ok(render_buddy)
     }
@@ -287,7 +325,7 @@ impl RenderBuddy {
             render_prepared_meshes(
                 &mesh_prepared_batch,
                 &mut render_pass,
-                &self.cached_pipelines,
+                &self.materials,
                 &camera_bind_group,
             );
         }
@@ -312,21 +350,25 @@ impl RenderBuddy {
 fn render_prepared_meshes<'a>(
     mesh_batches: &'a Vec<PreparedMeshBatch>,
     render_pass: &mut RenderPass<'a>,
-    cached_pipelines: &'a Arena<Pipeline>,
+    materials: &'a Arena<Pipeline>,
     camera_bind_group: &'a BindGroup,
 ) {
-    let last_pipeline_id = ArenaId::default();
+    let last_material = ArenaId::default();
 
     for mesh_batch in mesh_batches {
-        if mesh_batch.pipeline_handle.id != last_pipeline_id {
-            let pipeline = cached_pipelines
-                .get(mesh_batch.pipeline_handle)
+        if mesh_batch.material_handle.id != last_material {
+            let pipeline: &Pipeline = materials
+                .get(mesh_batch.material_handle)
                 .expect("Mesh was given invalid pipeline id");
             render_pass.set_pipeline(&pipeline.render_pipeline);
+
+            render_pass.set_bind_group(0, &camera_bind_group, &[]); // can probably do this once before the loop
         }
 
-        render_pass.set_bind_group(0, &camera_bind_group, &[]);
-        render_pass.set_bind_group(1, &mesh_batch.texture_bind_group, &[]);
+        for (i, bind_group) in mesh_batch.bind_groups.iter().enumerate() {
+            render_pass.set_bind_group(i as u32 + 1, &bind_group, &[]);
+        }
+
         render_pass.set_vertex_buffer(0, mesh_batch.vertex_buffer.slice(..));
         render_pass.set_index_buffer(mesh_batch.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..mesh_batch.indices_len, 0, 0..1);

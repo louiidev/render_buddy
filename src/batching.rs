@@ -10,9 +10,9 @@ use wgpu::{util::DeviceExt, BindGroup, Buffer};
 pub(crate) struct PreparedMeshBatch {
     pub(crate) vertex_buffer: Buffer,
     pub(crate) index_buffer: Buffer,
-    pub(crate) texture_bind_group: BindGroup,
     pub(crate) indices_len: u32,
-    pub(crate) pipeline_handle: Handle<Pipeline>,
+    pub(crate) material_handle: Handle<Pipeline>,
+    pub(crate) bind_groups: Vec<BindGroup>,
 }
 
 impl RenderBuddy {
@@ -21,13 +21,13 @@ impl RenderBuddy {
 
         meshes.sort_by(|a, b| a.z.partial_cmp(&b.z).unwrap_or(std::cmp::Ordering::Equal));
 
-        let mut current_batch_texture_id = ArenaId::default();
-        let mut current_pipeline_id = ArenaId::default();
+        let mut current_batch_texture_handle = Handle::new(ArenaId::default());
+        let mut current_material_handle_id = ArenaId::default();
         let mut batches: Vec<Mesh> = Vec::new();
 
         for mesh in meshes {
-            if current_batch_texture_id == mesh.handle.id
-                && current_pipeline_id == mesh.pipeline_handle.id
+            if current_batch_texture_handle == mesh.texture_handle.unwrap_or(Handle::default())
+                && current_material_handle_id == mesh.material_handle.id
             {
                 let length = batches.len();
 
@@ -41,8 +41,8 @@ impl RenderBuddy {
 
                 current_mesh.concat(mesh.vertices, indices);
             } else {
-                current_batch_texture_id = mesh.handle.id;
-                current_pipeline_id = mesh.pipeline_handle.id;
+                current_batch_texture_handle = mesh.texture_handle.unwrap_or(Handle::default());
+                current_material_handle_id = mesh.material_handle.id;
                 batches.push(mesh);
             }
         }
@@ -54,7 +54,12 @@ impl RenderBuddy {
                     self.device
                         .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                             label: Some("Vertex Buffer"),
-                            contents: bytemuck::cast_slice(&batch.vertices),
+                            contents: &batch
+                                .vertices
+                                .iter()
+                                .map(|v| v.get_bytes())
+                                .flatten()
+                                .collect::<Vec<u8>>(),
                             usage: wgpu::BufferUsages::VERTEX,
                         });
 
@@ -66,37 +71,36 @@ impl RenderBuddy {
                             usage: wgpu::BufferUsages::INDEX,
                         });
 
-                let texture = self.textures.get(batch.handle).unwrap();
+                let mut bind_groups = Vec::default();
 
-                let sampler = self.texture_samplers.get(&texture.sampler).unwrap();
+                let material = self
+                    .materials
+                    .get(batch.material_handle)
+                    .expect("Cant find material for batch");
 
-                let pipeline = self
-                    .cached_pipelines
-                    .get(batch.pipeline_handle)
-                    .expect("Pipeline is missing for mesh");
+                if let Some(texture_handle) = batch.texture_handle {
+                    let texture = self.textures.get(texture_handle).unwrap();
+                    let sampler = self.texture_samplers.get(&texture.sampler).unwrap();
 
-                let texture_bind_group =
-                    self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        layout: &pipeline.render_pipeline.get_bind_group_layout(1),
-                        entries: &[
-                            wgpu::BindGroupEntry {
-                                binding: 0,
-                                resource: wgpu::BindingResource::TextureView(&texture.view),
-                            },
-                            wgpu::BindGroupEntry {
-                                binding: 1,
-                                resource: wgpu::BindingResource::Sampler(sampler),
-                            },
-                        ],
-                        label: None,
-                    });
+                    let texture_bind_group = texture.create_bind_group(
+                        &self.device,
+                        &sampler,
+                        &material.render_pipeline.get_bind_group_layout(1),
+                    );
+
+                    bind_groups.push(texture_bind_group);
+                }
+
+                let mut mat_bind_groups = material.material.get_bind_groups(&batch, &self);
+
+                bind_groups.append(&mut mat_bind_groups);
 
                 PreparedMeshBatch {
                     vertex_buffer,
                     index_buffer,
-                    texture_bind_group,
+                    bind_groups,
                     indices_len: batch.indices.len() as _,
-                    pipeline_handle: batch.pipeline_handle,
+                    material_handle: batch.material_handle,
                 }
             })
             .collect()

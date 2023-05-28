@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use fontdue::layout::{
     CoordinateSystem, HorizontalAlign, Layout, LayoutSettings, TextStyle, VerticalAlign,
 };
@@ -9,7 +11,11 @@ use crate::{
     float_ord::FloatOrd,
     font_atlas::FontAtlas,
     fonts::{Font, GlyphAtlasInfo, PositionedGlyph},
-    mesh::{BatchMeshBuild, Mesh, Vertex2D, QUAD_INDICES, QUAD_VERTEX_POSITIONS},
+    mesh::{
+        AttributeValue, BatchMeshBuild, Mesh, MeshAttribute, Vertex, QUAD_INDICES,
+        QUAD_VERTEX_POSITIONS,
+    },
+    pipeline::Pipeline,
     texture::{Image, Texture},
     transform::Transform,
     RenderBuddy,
@@ -17,6 +23,7 @@ use crate::{
 
 pub struct Text {
     handle: Handle<Font>,
+    material: Option<Handle<Pipeline>>,
     value: String,
     font_size: f32,
     color: Vec4,
@@ -91,18 +98,26 @@ impl BatchMeshBuild for Text {
                 });
 
                 for i in 0..QUAD_VERTEX_POSITIONS.len() {
-                    vertices.push(Vertex2D {
-                        position: positions[i],
-                        uv: uvs[i].into(),
-                        color: self.color.into(),
-                    });
+                    vertices.push(Vertex(BTreeMap::from([
+                        (
+                            MeshAttribute::Position,
+                            AttributeValue::Position(positions[i]),
+                        ),
+                        (MeshAttribute::UV, AttributeValue::UV(uvs[i].into())),
+                        (
+                            MeshAttribute::Color,
+                            AttributeValue::Color(self.color.into()),
+                        ),
+                    ])));
                 }
 
+                let material_handle = self.material.unwrap_or(rb.material_map.default);
+
                 Mesh {
-                    handle: text_glyph.atlas_info.texture_handle,
+                    texture_handle: Some(text_glyph.atlas_info.texture_handle),
+                    material_handle,
                     vertices,
                     indices: QUAD_INDICES.to_vec(),
-                    pipeline_handle: Handle::new(ArenaId::first()),
                     z: transform.position.z,
                 }
             })
@@ -114,6 +129,7 @@ impl Default for Text {
     fn default() -> Self {
         Self {
             handle: Handle::new(ArenaId::first()),
+            material: None,
             value: Default::default(),
             font_size: Default::default(),
             vertical_alignment: VerticalAlign::Top,
