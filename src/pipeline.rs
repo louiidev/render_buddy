@@ -1,62 +1,63 @@
+use std::fmt::Debug;
+
 use wgpu::{
-    include_wgsl, BlendState, FragmentState, FrontFace, PolygonMode, PrimitiveState,
-    PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor, VertexState,
+    BindGroupLayout, BlendState, FragmentState, FrontFace, PolygonMode, PrimitiveState,
+    RenderPipeline, RenderPipelineDescriptor, VertexBufferLayout, VertexState, VertexStepMode,
 };
 
-use crate::{
-    arena::{ArenaId, Handle},
-    mesh::Vertex2D,
-    RenderBuddy,
-};
+use crate::{material::Material, mesh::get_attribute_layout, RenderBuddy};
 
-#[derive(Debug)]
 pub struct Pipeline {
     pub(crate) render_pipeline: RenderPipeline,
+    pub(crate) material: Box<dyn Material>,
 }
 
-pub struct PipelineMap {
-    default: ArenaId,
-    lines: ArenaId,
+impl Debug for Pipeline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pipeline")
+            .field("render_pipeline", &self.render_pipeline)
+            .field("material", &self.material)
+            .finish()
+    }
 }
 
 impl RenderBuddy {
-    pub(crate) fn create_default_pipeline(&mut self) -> Handle<Pipeline> {
-        let shader = self
-            .device
-            .create_shader_module(include_wgsl!("./default_shaders/2d.wgsl"));
+    pub(crate) fn create_pipeline_from_material(
+        &mut self,
+        material: &impl Material,
+    ) -> RenderPipeline {
+        let shader = self.device.create_shader_module(material.shader());
 
-        let texture_bind_group_layout =
-            self.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                multisampled: false,
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            count: None,
-                        },
-                    ],
-                    label: Some("texture_bind_group_layout"),
-                });
+        let vertex_attributes = material.vertex_attributes();
+
+        let (vertex_attribute, offset) = get_attribute_layout(vertex_attributes.iter());
+
+        let vertex_buffer_layout = VertexBufferLayout {
+            array_stride: offset as u64,
+            step_mode: VertexStepMode::Vertex,
+            attributes: vertex_attribute.as_slice(),
+        };
+
+        let bind_group_layouts: Vec<BindGroupLayout> =
+            material.get_bind_group_layouts(&self.device);
+
+        let mut predefined_bind_group_layouts = if material.has_texture() {
+            vec![
+                &self.camera_bind_group_layout,
+                &self.texture_bind_group_layout,
+            ]
+        } else {
+            vec![&self.camera_bind_group_layout]
+        };
+        predefined_bind_group_layouts.append(&mut bind_group_layouts.iter().map(|x| &*x).collect());
+
+        dbg!(&predefined_bind_group_layouts);
 
         let render_pipeline_layout =
             self.device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("2D Render Pipeline Layout"),
-                    bind_group_layouts: &[
-                        &self.camera_bind_group_layout,
-                        &texture_bind_group_layout,
-                    ],
+                    label: Some("Material Pipeline Layout"),
+                    bind_group_layouts: predefined_bind_group_layouts.as_slice(),
                     push_constant_ranges: &[],
                 });
 
@@ -69,7 +70,7 @@ impl RenderBuddy {
         let descriptor = RenderPipelineDescriptor {
             vertex: VertexState {
                 entry_point: "vertex",
-                buffers: &[Vertex2D::desc()],
+                buffers: &[vertex_buffer_layout],
                 module: &shader,
             },
             fragment: Some(FragmentState {
@@ -84,7 +85,7 @@ impl RenderBuddy {
                 unclipped_depth: false,
                 polygon_mode: PolygonMode::Fill,
                 conservative: false,
-                topology: PrimitiveTopology::TriangleList,
+                topology: material.topology(),
                 strip_index_format: None,
             },
             depth_stencil: None,
@@ -93,12 +94,10 @@ impl RenderBuddy {
                 mask: !0,                         // 3.
                 alpha_to_coverage_enabled: false, // 4.
             },
-            label: Some("default_pipeline"),
+            label: Some(material.label()),
             multiview: None,
         };
 
-        self.cached_pipelines.insert(Pipeline {
-            render_pipeline: self.device.create_render_pipeline(&descriptor),
-        })
+        self.device.create_render_pipeline(&descriptor)
     }
 }

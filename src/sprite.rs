@@ -1,8 +1,14 @@
+use std::collections::BTreeMap;
+
 use glam::Vec2;
 
 use crate::{
     arena::{ArenaId, Handle},
-    mesh::{Mesh, MeshBuilder, Vertex2D, QUAD_INDICES, QUAD_UVS, QUAD_VERTEX_POSITIONS},
+    mesh::{
+        AttributeValue, Mesh, MeshAttribute, MeshBuilder, Vertex, QUAD_INDICES, QUAD_UVS,
+        QUAD_VERTEX_POSITIONS,
+    },
+    pipeline::Pipeline,
     rect::Rect,
     texture::Texture,
     transform::Transform,
@@ -12,6 +18,7 @@ use crate::{
 #[derive(Clone, Copy, Debug)]
 pub struct Sprite {
     pub handle: Handle<Texture>,
+    pub material: Option<Handle<Pipeline>>,
     pub anchor: Anchor,
     pub color: [f32; 4],
     pub texture_rect: Option<Rect>,
@@ -24,6 +31,7 @@ impl Default for Sprite {
     fn default() -> Self {
         Sprite {
             handle: Handle::new(ArenaId::first()),
+            material: None,
             anchor: Anchor::default(),
             color: [1., 1., 1., 1.],
             texture_rect: None,
@@ -91,15 +99,20 @@ impl MeshBuilder for Sprite {
         let vertices = positions
             .iter()
             .zip(uvs)
-            .map(|(position, uv)| Vertex2D {
-                position: *position,
-                uv: uv.into(),
-                color: self.color,
+            .map(|(position, uv)| {
+                Vertex(BTreeMap::from([
+                    (MeshAttribute::Position, AttributeValue::Position(*position)),
+                    (MeshAttribute::UV, AttributeValue::UV(uv.into())),
+                    (MeshAttribute::Color, AttributeValue::Color(self.color)),
+                ]))
             })
             .collect();
 
+        let material_handle = self.material.unwrap_or(rb.material_map.default);
+
         Mesh::new(
-            self.handle,
+            Some(self.handle),
+            material_handle,
             vertices,
             QUAD_INDICES.to_vec(),
             transform.position.z,

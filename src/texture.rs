@@ -1,9 +1,10 @@
 use glam::Vec2;
-use std::num::NonZeroU32;
-use wgpu::{Extent3d, TextureFormat};
+use std::{num::NonZeroU32, sync::Arc};
+use wgpu::{BindGroup, BindGroupLayout, BindingResource, Device, Extent3d, Sampler, TextureFormat};
 
 use crate::{
     arena::{ArenaId, Handle},
+    bind_groups::BindGroupBuilder,
     RenderBuddy,
 };
 
@@ -39,6 +40,20 @@ pub struct Texture {
     pub(crate) view: wgpu::TextureView,
     pub dimensions: Vec2,
     pub(crate) sampler: TextureSamplerType,
+}
+
+impl Texture {
+    pub(crate) fn create_bind_group(
+        &self,
+        device: &Device,
+        sampler: &Arc<Sampler>,
+        bgl: &BindGroupLayout,
+    ) -> BindGroup {
+        BindGroupBuilder::new()
+            .append_texture_view(&self.view)
+            .append(BindingResource::Sampler(&sampler))
+            .build(device, None, &bgl)
+    }
 }
 
 impl RenderBuddy {

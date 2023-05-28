@@ -122,7 +122,7 @@ impl Camera {
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("View Buffer"),
+            label: Some("Camera Buffer"),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
             contents: bytemuck::cast_slice(&[camera_uniform]),
         });

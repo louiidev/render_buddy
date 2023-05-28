@@ -1,16 +1,20 @@
-use std::ops::Add;
+use std::{collections::BTreeMap, ops::Add};
 
 use glam::{Vec2, Vec4};
 
 use crate::{
     arena::{ArenaId, Handle},
-    mesh::{Mesh, MeshBuilder, Vertex2D, QUAD_INDICES, QUAD_UVS, QUAD_VERTEX_POSITIONS},
+    mesh::{
+        AttributeValue, Mesh, MeshAttribute, MeshBuilder, Vertex, QUAD_INDICES, QUAD_UVS,
+        QUAD_VERTEX_POSITIONS,
+    },
+    pipeline::Pipeline,
     sprite::Anchor,
     transform::Transform,
     RenderBuddy,
 };
 
-#[derive(Default, Clone, Copy, Debug, PartialEq)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct Rect {
     /// The minimum corner point of the rect.
     pub(crate) min: Vec2,
@@ -18,7 +22,9 @@ pub struct Rect {
     pub(crate) max: Vec2,
     pub color: Vec4,
     pub anchor: Anchor,
+    pub material: Option<Handle<Pipeline>>,
 }
+
 impl Rect {
     pub(crate) fn size(&self) -> Vec2 {
         self.max - self.min
@@ -30,6 +36,7 @@ impl Rect {
             max: size,
             color,
             anchor: Anchor::Center,
+            material: None,
         }
     }
 
@@ -47,12 +54,13 @@ impl Add<Vec2> for Rect {
             max: self.max + other,
             color: self.color,
             anchor: self.anchor,
+            material: self.material,
         }
     }
 }
 
 impl MeshBuilder for Rect {
-    fn build(&self, transform: Transform, _rb: &RenderBuddy) -> Mesh {
+    fn build(&self, transform: Transform, rb: &RenderBuddy) -> Mesh {
         let quad_size = self.size();
 
         let positions: [[f32; 3]; 4] = QUAD_VERTEX_POSITIONS.map(|quad_pos| {
@@ -64,15 +72,23 @@ impl MeshBuilder for Rect {
         let vertices = positions
             .iter()
             .zip(QUAD_UVS)
-            .map(|(position, uv)| Vertex2D {
-                position: *position,
-                uv: uv.into(),
-                color: self.color.to_array(),
+            .map(|(position, uv)| {
+                Vertex(BTreeMap::from([
+                    (MeshAttribute::Position, AttributeValue::Position(*position)),
+                    (MeshAttribute::UV, AttributeValue::UV(uv.into())),
+                    (
+                        MeshAttribute::Color,
+                        AttributeValue::Color(self.color.into()),
+                    ),
+                ]))
             })
             .collect();
 
+        let material_handle = self.material.unwrap_or(rb.material_map.default);
+
         Mesh::new(
-            Handle::new(ArenaId::first()),
+            Some(Handle::new(ArenaId::first())),
+            material_handle,
             vertices,
             QUAD_INDICES.to_vec(),
             transform.position.z,

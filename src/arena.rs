@@ -1158,7 +1158,7 @@ pub struct ArenaId {
 }
 
 impl ArenaId {
-    pub fn first() -> Self {
+    pub const fn first() -> Self {
         ArenaId { uid: 1, idx: 0 }
     }
 }
@@ -1275,6 +1275,12 @@ impl<T> Clone for Handle<T> {
 }
 
 impl<T> Copy for Handle<T> {}
+
+impl<T> PartialEq for Handle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
 
 #[cfg(feature = "serde")]
 mod ser {
