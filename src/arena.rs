@@ -68,9 +68,9 @@
 //! ```
 //! # use render_buddy::arena::Arena;
 //! let mut arena = Arena::new();
-//! let a = arena.insert('A');
-//! let b = arena.insert('B');
-//! let c = arena.insert('C');
+//! let a = arena.insert('A').id;
+//! let b = arena.insert('B').id;
+//! let c = arena.insert('C').id;
 //!
 //! let mut pairs = arena.pairs();
 //! assert_eq!(pairs.next(), Some((a, &'A')));
@@ -84,9 +84,9 @@
 //! ```
 //! # use render_buddy::arena::Arena;
 //! # let mut arena = Arena::new();
-//! # let a = arena.insert('A');
-//! # let b = arena.insert('B');
-//! # let c = arena.insert('C');
+//! # let a = arena.insert('A').id;
+//! # let b = arena.insert('B').id;
+//! # let c = arena.insert('C').id;
 //! let mut ids = arena.ids();
 //! assert_eq!(ids.next(), Some(a));
 //! assert_eq!(ids.next(), Some(b));
@@ -346,7 +346,7 @@ impl<T> Arena<T> {
     ///
     /// assert_eq!(arena.as_slice(), &['A', 'B']);
     ///
-    /// match arena.get2_mut(a, b) {
+    /// match arena.get2_mut(a.id, b.id) {
     ///     (Some(val_a), Some(val_b)) => {
     ///         *val_a = 'X';
     ///         *val_b = 'Y';
@@ -455,17 +455,17 @@ impl<T> Arena<T> {
     /// let d = arena.insert('D');
     ///
     /// assert_eq!(arena.as_slice(), &['A', 'B', 'C', 'D']);
-    /// assert_eq!(arena.index_of(a), Some(0));
-    /// assert_eq!(arena.index_of(b), Some(1));
-    /// assert_eq!(arena.index_of(c), Some(2));
-    /// assert_eq!(arena.index_of(d), Some(3));
+    /// assert_eq!(arena.index_of(a.id), Some(0));
+    /// assert_eq!(arena.index_of(b.id), Some(1));
+    /// assert_eq!(arena.index_of(c.id), Some(2));
+    /// assert_eq!(arena.index_of(d.id), Some(3));
     ///
     /// // remove `B` from the arena
     /// arena.remove_at(1);
     ///
     /// // now `D` has moved into the hole created by `B`
     /// assert_eq!(arena.as_slice(), &['A', 'D', 'C']);
-    /// assert_eq!(arena.index_of(d), Some(1));
+    /// assert_eq!(arena.index_of(d.id), Some(1));
     ///
     /// ```
     #[inline]
@@ -523,12 +523,12 @@ impl<T> Arena<T> {
     /// let foo = arena.insert_with(|id| Person {
     ///     id,
     ///     name: "Foo",
-    /// });
+    /// }).id;
     ///
     /// let bar = arena.insert_with(|id| Person {
     ///     id,
     ///     name: "Bar",
-    /// });
+    /// }).id;
     ///
     /// assert_eq!(arena[foo].id, foo);
     /// assert_eq!(arena[foo].name, "Foo");
@@ -728,8 +728,8 @@ impl<T> Arena<T> {
     /// ```
     /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
-    /// let a = arena.insert('A');
-    /// let b = arena.insert('B');
+    /// let a = arena.insert('A').id;
+    /// let b = arena.insert('B').id;
     ///
     /// assert_eq!(arena.as_slice(), &['A', 'B']);
     /// assert_eq!(arena[a], 'A');
@@ -759,8 +759,8 @@ impl<T> Arena<T> {
     /// ```
     /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
-    /// let a = arena.insert('A');
-    /// let b = arena.insert('B');
+    /// let a = arena.insert('A').id;
+    /// let b = arena.insert('B').id;
     ///
     /// assert_eq!(arena.as_slice(), &['A', 'B']);
     /// assert_eq!(arena[a], 'A');
@@ -840,9 +840,9 @@ impl<T> Arena<T> {
     /// ```
     /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
-    /// let c = arena.insert('C');
-    /// let a = arena.insert('A');
-    /// let b = arena.insert('B');
+    /// let c = arena.insert('C').id;
+    /// let a = arena.insert('A').id;
+    /// let b = arena.insert('B').id;
     ///
     /// assert_eq!(arena.as_slice(), &['C', 'A', 'B']);
     /// assert_eq!(arena[a], 'A');
@@ -915,9 +915,9 @@ impl<T> Arena<T> {
     /// let c = arena.insert('C');
     ///
     /// let mut pairs = arena.pairs();
-    /// assert_eq!(pairs.next(), Some((a, &'A')));
-    /// assert_eq!(pairs.next(), Some((b, &'B')));
-    /// assert_eq!(pairs.next(), Some((c, &'C')));
+    /// assert_eq!(pairs.next(), Some((a.id, &'A')));
+    /// assert_eq!(pairs.next(), Some((b.id, &'B')));
+    /// assert_eq!(pairs.next(), Some((c.id, &'C')));
     /// assert_eq!(pairs.next(), None);
     /// ```
     #[inline]
@@ -942,11 +942,11 @@ impl<T> Arena<T> {
     /// assert_eq!(arena.as_slice(), &['A', 'B', 'C']);
     ///
     /// for (id, val) in arena.pairs_mut() {
-    ///     if id == a {
+    ///     if id == a.id {
     ///         assert_eq!(*val, 'A');
-    ///     } else if id == b {
+    ///     } else if id == b.id {
     ///         assert_eq!(*val, 'B');
-    ///     } else if id == c {
+    ///     } else if id == c.id {
     ///         assert_eq!(*val, 'C');
     ///     } else {
     ///         unreachable!()
@@ -973,9 +973,9 @@ impl<T> Arena<T> {
     /// let c = arena.insert('C');
     ///
     /// let mut ids = arena.ids();
-    /// assert_eq!(ids.next(), Some(a));
-    /// assert_eq!(ids.next(), Some(b));
-    /// assert_eq!(ids.next(), Some(c));
+    /// assert_eq!(ids.next(), Some(a.id));
+    /// assert_eq!(ids.next(), Some(b.id));
+    /// assert_eq!(ids.next(), Some(c.id));
     /// assert_eq!(ids.next(), None);
     /// ```
     #[inline]
@@ -1003,9 +1003,9 @@ impl<T: Ord> Arena<T> {
     /// ```
     /// # use render_buddy::arena::Arena;
     /// let mut arena = Arena::new();
-    /// let c = arena.insert('C');
-    /// let a = arena.insert('A');
-    /// let b = arena.insert('B');
+    /// let c = arena.insert('C').id;
+    /// let a = arena.insert('A').id;
+    /// let b = arena.insert('B').id;
     ///
     /// assert_eq!(arena.as_slice(), &['C', 'A', 'B']);
     /// assert_eq!(arena[a], 'A');
