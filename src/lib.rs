@@ -9,7 +9,7 @@ use font_atlas::FontAtlas;
 use fonts::{Font, FontSizeKey};
 use glam::{Quat, Vec3, Vec4};
 use material::DefaultMat;
-use mesh::{BatchMeshBuild, Mesh, MeshBuilder};
+use mesh::{BatchMeshCreator, Mesh, MeshCreator};
 use pipeline::Pipeline;
 use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use render_context::RenderContext;
@@ -50,17 +50,18 @@ pub struct MaterialMap {
 pub struct RenderBuddy {
     pub(crate) fonts: Arena<Font>,
     pub(crate) font_atlases: HashMap<(FontSizeKey, ArenaId), FontAtlas>,
-    pub(crate) textures: Arena<Texture>,
-    pub(crate) device: wgpu::Device,
+    pub textures: Arena<Texture>,
+    pub device: wgpu::Device,
     pub(crate) meshes: Vec<Mesh>,
-    pub(crate) texture_samplers: HashMap<TextureSamplerType, Arc<Sampler>>,
+    pub(crate) default_texture_samplers: HashMap<TextureSamplerType, Handle<Sampler>>,
+    pub samplers: Arena<Sampler>,
     camera_bind_group_layout: BindGroupLayout,
-    texture_bind_group_layout: BindGroupLayout,
     queue: wgpu::Queue,
     surface: wgpu::Surface,
     surface_config: SurfaceConfiguration,
     materials: Arena<Pipeline>,
     pub(crate) material_map: MaterialMap,
+    pub(crate) depth_texture_handle: Handle<Texture>,
 }
 
 impl RenderBuddy {
@@ -143,6 +144,11 @@ impl RenderBuddy {
             })
         };
 
+        let mut samplers = Arena::new();
+
+        let default_sampler_linear = samplers.insert(default_sampler_linear);
+        let default_sampler_nearest = samplers.insert(default_sampler_nearest);
+
         let camera_bind_group_layout = BindGroupLayoutBuilder::new()
             .append(
                 ShaderStages::VERTEX,
@@ -155,45 +161,55 @@ impl RenderBuddy {
             )
             .build(&device, Some("camera_bind_group_layout"));
 
-        let texture_bind_group_layout = BindGroupLayoutBuilder::new()
-            .append(
-                ShaderStages::FRAGMENT,
-                BindingType::Texture {
-                    multisampled: false,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                },
-                None,
-            )
-            .append(
-                ShaderStages::FRAGMENT,
-                BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                None,
-            )
-            .build(&device, None);
+        let depth_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            compare: None, // 5.
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 100.0,
+            ..Default::default()
+        });
+
+        let depth_texture_sampler_handle = samplers.insert(depth_texture_sampler);
+
+        let depth_texture = Texture::create_depth_texture(
+            &device,
+            &surface_config,
+            depth_texture_sampler_handle.clone(),
+        );
+
+        let blank_texture = Texture::create_blank_texture(&device, &queue, default_sampler_linear);
+
+        let mut textures = Arena::new();
+
+        textures.insert(blank_texture);
+        let depth_texture_handle = textures.insert(depth_texture);
 
         let mut render_buddy = Self {
             camera_bind_group_layout,
-            texture_bind_group_layout,
             font_atlases: HashMap::default(),
             fonts: Arena::new(),
             device,
             meshes: Vec::default(),
-            textures: Arena::new(),
+            textures,
             queue,
             surface,
             surface_config,
-            texture_samplers: HashMap::from([
-                (TextureSamplerType::Linear, Arc::new(default_sampler_linear)),
-                (
-                    TextureSamplerType::Nearest,
-                    Arc::new(default_sampler_nearest),
-                ),
+            samplers,
+            default_texture_samplers: HashMap::from([
+                (TextureSamplerType::Linear, default_sampler_linear),
+                (TextureSamplerType::Nearest, default_sampler_nearest),
+                (TextureSamplerType::Depth, depth_texture_sampler_handle),
             ]),
             materials: Arena::new(),
             material_map: MaterialMap {
                 default: Handle::default(),
             },
+            depth_texture_handle,
         };
 
         let default_mat = DefaultMat {};
@@ -208,18 +224,20 @@ impl RenderBuddy {
             Font::try_from_bytes(include_bytes!("./default_font/Roboto-Regular.ttf")).unwrap(),
         );
 
-        render_buddy.create_blank_texture();
-
         Ok(render_buddy)
     }
 
+    pub fn get_viewport_size(&self) -> (u32, u32) {
+        (self.surface_config.width, self.surface_config.height)
+    }
+
     /// Pushes a mesh to the render queue, must implement MeshBuilder
-    pub fn push(&mut self, mesh: impl MeshBuilder, position: Vec3) {
+    pub fn push(&mut self, mesh: impl MeshCreator, position: Vec3) {
         self.push_transform(mesh, Transform::from_position(position));
     }
 
     /// Pushes a mesh to the render queue, with a rotation
-    pub fn push_rotation(&mut self, mesh: impl MeshBuilder, position: Vec3, rotation: Quat) {
+    pub fn push_rotation(&mut self, mesh: impl MeshCreator, position: Vec3, rotation: Quat) {
         self.push_transform(
             mesh,
             Transform {
@@ -230,7 +248,7 @@ impl RenderBuddy {
         );
     }
     /// Pushes a mesh to the render queue, with a scale
-    pub fn push_scale(&mut self, mesh: impl MeshBuilder, position: Vec3, scale: Vec3) {
+    pub fn push_scale(&mut self, mesh: impl MeshCreator, position: Vec3, scale: Vec3) {
         self.push_transform(
             mesh,
             Transform {
@@ -241,20 +259,28 @@ impl RenderBuddy {
         );
     }
     /// Pushes a mesh to the render queue, with a full transform
-    pub fn push_transform(&mut self, mesh: impl MeshBuilder, transform: Transform) {
+    pub fn push_transform(&mut self, mesh: impl MeshCreator, transform: Transform) {
         let mesh = mesh.build(transform, &self);
         self.meshes.push(mesh);
     }
 
     /// Pushes a group of meshes, useful for pushing a batch of meshes, mainly used for text rendering
     /// Since each glyph is a separate mesh
-    pub fn append(&mut self, meshes: impl BatchMeshBuild, position: Vec3) {
+    pub fn append(&mut self, meshes: impl BatchMeshCreator, position: Vec3) {
         self.append_transform(meshes, Transform::from_position(position))
     }
 
     /// Pushes a group of meshes, with a transform
-    pub fn append_transform(&mut self, meshes: impl BatchMeshBuild, transform: Transform) {
+    pub fn append_transform(&mut self, meshes: impl BatchMeshCreator, transform: Transform) {
         let mut meshes = meshes.build(transform, self);
+        self.meshes.append(&mut meshes);
+    }
+
+    pub fn push_mesh(&mut self, mesh: Mesh) {
+        self.meshes.push(mesh);
+    }
+
+    pub fn append_meshes(&mut self, mut meshes: Vec<Mesh>) {
         self.meshes.append(&mut meshes);
     }
 
@@ -289,6 +315,7 @@ impl RenderBuddy {
         render_context: &mut RenderContext,
         clear_color: Option<Vec4>,
         camera: &Camera,
+        use_depth_stencil_attachment: bool,
     ) {
         let mesh_prepared_batch = self.prepare_mesh_batch();
         let camera_bind_group = camera.create_bind_group(
@@ -319,7 +346,18 @@ impl RenderBuddy {
                             resolve_target: None,
                             ops: wgpu::Operations { load, store: true },
                         })],
-                        depth_stencil_attachment: None,
+                        depth_stencil_attachment: if use_depth_stencil_attachment {
+                            Some(wgpu::RenderPassDepthStencilAttachment {
+                                view: &self.textures.get(self.depth_texture_handle).unwrap().view,
+                                depth_ops: Some(wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(1.0),
+                                    store: true,
+                                }),
+                                stencil_ops: None,
+                            })
+                        } else {
+                            None
+                        },
                     });
 
             render_prepared_meshes(
@@ -344,6 +382,18 @@ impl RenderBuddy {
         self.surface_config.width = new_surface_size.0;
         self.surface_config.height = new_surface_size.1;
         self.surface.configure(&self.device, &self.surface_config);
+
+        self.replace_texture(
+            self.depth_texture_handle,
+            Texture::create_depth_texture(
+                &self.device,
+                &self.surface_config,
+                *self
+                    .default_texture_samplers
+                    .get(&TextureSamplerType::Depth)
+                    .unwrap(),
+            ),
+        );
     }
 }
 
@@ -370,7 +420,12 @@ fn render_prepared_meshes<'a>(
         }
 
         render_pass.set_vertex_buffer(0, mesh_batch.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(mesh_batch.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..mesh_batch.indices_len, 0, 0..1);
+        if mesh_batch.indices_len > 0 {
+            render_pass
+                .set_index_buffer(mesh_batch.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..mesh_batch.indices_len, 0, 0..1);
+        } else {
+            render_pass.draw(0..mesh_batch.vert_len, 0..1);
+        }
     }
 }

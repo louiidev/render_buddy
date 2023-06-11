@@ -5,7 +5,7 @@ use glam::{Vec2, Vec4};
 use crate::{
     arena::{ArenaId, Handle},
     mesh::{
-        AttributeValue, Mesh, MeshAttribute, MeshBuilder, Vertex, QUAD_INDICES, QUAD_UVS,
+        AttributeValue, Mesh, MeshAttribute, MeshCreator, Vertex, QUAD_INDICES, QUAD_UVS,
         QUAD_VERTEX_POSITIONS,
     },
     pipeline::Pipeline,
@@ -17,9 +17,9 @@ use crate::{
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Rect {
     /// The minimum corner point of the rect.
-    pub(crate) min: Vec2,
+    pub min: Vec2,
     /// The maximum corner point of the rect.
-    pub(crate) max: Vec2,
+    pub max: Vec2,
     pub color: Vec4,
     pub anchor: Anchor,
     pub material: Option<Handle<Pipeline>>,
@@ -59,7 +59,7 @@ impl Add<Vec2> for Rect {
     }
 }
 
-impl MeshBuilder for Rect {
+impl MeshCreator for Rect {
     fn build(&self, transform: Transform, rb: &RenderBuddy) -> Mesh {
         let quad_size = self.size();
 

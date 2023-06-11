@@ -18,7 +18,7 @@ pub struct CameraUniform {
 
 impl Camera {
     /// Overrides the default camera values
-    pub fn set_camera_data(&mut self, camera: Camera) {
+    pub fn set_data(&mut self, camera: Camera) {
         self.projection = camera.projection;
         self.position = camera.position;
         self.rotation = camera.rotation;
@@ -26,15 +26,15 @@ impl Camera {
     /// Sets the camera position
     /// Remember to set the Z value correctly
     /// Otherwise things might not render correctly
-    pub fn set_camera_position(&mut self, position: Vec3) {
+    pub fn set_position(&mut self, position: Vec3) {
         self.position = position;
     }
     /// Sets the camera rotation
-    pub fn set_camera_rotation(&mut self, rotation: Quat) {
+    pub fn set_rotation(&mut self, rotation: Quat) {
         self.rotation = rotation;
     }
     /// Sets the projection
-    pub fn set_camera_projection(&mut self, projection: Projection) {
+    pub fn set_projection(&mut self, projection: Projection) {
         self.projection = projection;
     }
     /// Sets the camera origin, only works for Orthographic projection
@@ -46,8 +46,12 @@ impl Camera {
         self
     }
     // Sets the projection to perspective
-    pub fn set_projection_perspective(&mut self, vfov: f32, near: f32) {
-        self.set_camera_projection(Projection::Perspective { vfov, near });
+    pub fn set_projection_perspective(&mut self, vfov: f32, near: f32, aspect_ratio: f32) {
+        self.set_projection(Projection::Perspective {
+            vfov,
+            near,
+            aspect_ratio,
+        });
     }
 
     // Sets the projection to orthographic
@@ -56,14 +60,14 @@ impl Camera {
         origin: CameraOrigin,
         target_resolution: Option<Vec2>,
     ) {
-        self.set_camera_projection(Projection::Orthographic {
+        self.set_projection(Projection::Orthographic {
             origin,
             target_resolution,
         });
     }
     // Sets the projection to custom Matrix
     pub fn set_custom_projection(&mut self, projection: Mat4) {
-        self.set_camera_projection(Projection::Custom(projection));
+        self.set_projection(Projection::Custom(projection));
     }
 
     pub fn get_current_origin(&mut self) -> CameraOrigin {
@@ -83,6 +87,18 @@ impl Camera {
                 target_resolution: None,
             },
             position: Vec3::new(0., 0., DEFAULT_ORTHO_CAMERA_DEPTH - 0.1),
+            rotation: Quat::IDENTITY,
+        }
+    }
+
+    pub fn perspective(fov_radians: f32, near: f32, aspect_ratio: f32) -> Self {
+        Self {
+            projection: Projection::Perspective {
+                vfov: fov_radians,
+                near,
+                aspect_ratio,
+            },
+            position: Vec3::new(0., 0., 5.),
             rotation: Quat::IDENTITY,
         }
     }
@@ -172,9 +188,11 @@ impl Camera {
                     DEFAULT_ORTHO_CAMERA_DEPTH,
                 )
             }
-            Projection::Perspective { vfov, near } => {
-                Mat4::perspective_infinite_reverse_rh(vfov.to_radians(), 1.0, *near)
-            }
+            Projection::Perspective {
+                vfov,
+                near,
+                aspect_ratio,
+            } => Mat4::perspective_infinite_reverse_rh(*vfov, *aspect_ratio, *near),
             Projection::Custom(custom) => *custom,
         }
     }
@@ -198,6 +216,7 @@ pub enum Projection {
         vfov: f32,
         /// Near plane distance. All projection uses a infinite far plane.
         near: f32,
+        aspect_ratio: f32,
     },
     Custom(Mat4),
 }

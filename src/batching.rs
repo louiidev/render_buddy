@@ -10,6 +10,7 @@ use wgpu::{util::DeviceExt, BindGroup, Buffer};
 pub(crate) struct PreparedMeshBatch {
     pub(crate) vertex_buffer: Buffer,
     pub(crate) index_buffer: Buffer,
+    pub(crate) vert_len: u32,
     pub(crate) indices_len: u32,
     pub(crate) material_handle: Handle<Pipeline>,
     pub(crate) bind_groups: Vec<BindGroup>,
@@ -79,19 +80,23 @@ impl RenderBuddy {
                     .expect("Cant find material for batch");
 
                 if let Some(texture_handle) = batch.texture_handle {
-                    let texture = self.textures.get(texture_handle).unwrap();
-                    let sampler = self.texture_samplers.get(&texture.sampler).unwrap();
+                    if material.material.has_texture() {
+                        let texture = self.textures.get(texture_handle).unwrap();
+                        let sampler = self.samplers.get(texture.sampler).unwrap();
+                        let texture_bind_group = texture.create_bind_group(
+                            &self.device,
+                            &material.render_pipeline.get_bind_group_layout(1),
+                            &sampler,
+                        );
 
-                    let texture_bind_group = texture.create_bind_group(
-                        &self.device,
-                        &sampler,
-                        &material.render_pipeline.get_bind_group_layout(1),
-                    );
-
-                    bind_groups.push(texture_bind_group);
+                        bind_groups.push(texture_bind_group);
+                    }
                 }
 
-                let mut mat_bind_groups = material.material.get_bind_groups(&batch, &self);
+                let mut mat_bind_groups =
+                    material
+                        .material
+                        .get_bind_groups(&batch, &self, &material.render_pipeline);
 
                 bind_groups.append(&mut mat_bind_groups);
 
@@ -99,6 +104,7 @@ impl RenderBuddy {
                     vertex_buffer,
                     index_buffer,
                     bind_groups,
+                    vert_len: batch.vertices.len() as _,
                     indices_len: batch.indices.len() as _,
                     material_handle: batch.material_handle,
                 }

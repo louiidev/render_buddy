@@ -5,8 +5,8 @@ use glam::Vec2;
 use crate::{
     arena::{ArenaId, Handle},
     mesh::{
-        AttributeValue, Mesh, MeshAttribute, MeshBuilder, Vertex, QUAD_INDICES, QUAD_UVS,
-        QUAD_VERTEX_POSITIONS,
+        AttributeValue, Mesh, MeshAttribute, MeshBuilder, MeshCreator, Vertex, QUAD_INDICES,
+        QUAD_UVS, QUAD_VERTEX_POSITIONS,
     },
     pipeline::Pipeline,
     rect::Rect,
@@ -55,7 +55,7 @@ impl Sprite {
     }
 }
 
-impl MeshBuilder for Sprite {
+impl MeshCreator for Sprite {
     fn build(&self, transform: Transform, rb: &RenderBuddy) -> Mesh {
         let texture = rb
             .textures
@@ -110,13 +110,16 @@ impl MeshBuilder for Sprite {
 
         let material_handle = self.material.unwrap_or(rb.material_map.default);
 
-        Mesh::new(
-            Some(self.handle),
-            material_handle,
-            vertices,
-            QUAD_INDICES.to_vec(),
-            transform.position.z,
-        )
+        let mut mesh = MeshBuilder::new()
+            .with_indices(&QUAD_INDICES)
+            .with_vertices(vertices)
+            .with_material(material_handle)
+            .with_texture(self.handle)
+            .build();
+
+        mesh.z = transform.position.z;
+
+        mesh
     }
 }
 

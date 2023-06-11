@@ -1,9 +1,12 @@
 use glam::Vec2;
 use std::{num::NonZeroU32, sync::Arc};
-use wgpu::{BindGroup, BindGroupLayout, BindingResource, Device, Extent3d, Sampler, TextureFormat};
+use wgpu::{
+    BindGroup, BindGroupLayout, BindingResource, Device, Extent3d, Queue, Sampler,
+    SurfaceConfiguration, TextureFormat,
+};
 
 use crate::{
-    arena::{ArenaId, Handle},
+    arena::{Arena, ArenaId, Handle},
     bind_groups::BindGroupBuilder,
     RenderBuddy,
 };
@@ -13,6 +16,7 @@ pub enum TextureSamplerType {
     Linear,
     #[default]
     Nearest,
+    Depth,
 }
 
 #[derive(Clone)]
@@ -39,27 +43,17 @@ pub struct Texture {
     pub texture: wgpu::Texture,
     pub(crate) view: wgpu::TextureView,
     pub dimensions: Vec2,
-    pub(crate) sampler: TextureSamplerType,
+    pub sampler: Handle<Sampler>,
 }
 
 impl Texture {
-    pub(crate) fn create_bind_group(
-        &self,
+    pub(crate) fn create_blank_texture(
         device: &Device,
-        sampler: &Arc<Sampler>,
-        bgl: &BindGroupLayout,
-    ) -> BindGroup {
-        BindGroupBuilder::new()
-            .append_texture_view(&self.view)
-            .append(BindingResource::Sampler(&sampler))
-            .build(device, None, &bgl)
-    }
-}
-
-impl RenderBuddy {
-    pub(crate) fn create_blank_texture(&mut self) {
+        queue: &Queue,
+        sampler: Handle<Sampler>,
+    ) -> Self {
         let size = Extent3d::default();
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size,
             mip_level_count: 1,
@@ -69,7 +63,7 @@ impl RenderBuddy {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        self.queue.write_texture(
+        queue.write_texture(
             wgpu::ImageCopyTexture {
                 aspect: wgpu::TextureAspect::All,
                 texture: &texture,
@@ -91,17 +85,60 @@ impl RenderBuddy {
             texture,
             view,
             dimensions: Vec2::new(size.width as f32, size.height as f32),
-            sampler: TextureSamplerType::default(),
+            sampler,
         };
 
-        let handle: Handle<Texture> = self.textures.insert(texture);
-
-        assert!(
-            handle.id == ArenaId::first(),
-            "Blank texture needs to be first texture inserted"
-        );
+        texture
     }
 
+    pub fn create_bind_group(
+        &self,
+        device: &Device,
+        bgl: &BindGroupLayout,
+        sampler: &Sampler,
+    ) -> BindGroup {
+        BindGroupBuilder::new()
+            .append_texture_view(&self.view)
+            .append(BindingResource::Sampler(&sampler))
+            .build(device, None, &bgl)
+    }
+
+    pub(crate) fn create_depth_texture(
+        device: &Device,
+        surface_config: &SurfaceConfiguration,
+        sampler: Handle<Sampler>,
+    ) -> Self {
+        let size = wgpu::Extent3d {
+            // 2.
+            width: surface_config.width,
+            height: surface_config.height,
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some("Depth texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[TextureFormat::Depth32Float],
+        };
+        let texture = device.create_texture(&desc);
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // TODO: we should probably store this and have a ref in the texture
+
+        Texture {
+            texture,
+            view,
+            dimensions: Vec2::new(surface_config.width as f32, surface_config.height as f32),
+            sampler,
+        }
+    }
+}
+
+impl RenderBuddy {
     /// Loads a texture to the GPU
     /// Returns a handle to the texture ref
     pub fn add_texture(&mut self, image: Image) -> Handle<Texture> {
@@ -125,7 +162,7 @@ impl RenderBuddy {
         &mut self,
         bytes: &[u8],
         size: (u32, u32),
-        sampler: TextureSamplerType,
+        texture_sampler_type: TextureSamplerType,
         format: TextureFormat,
     ) -> Texture {
         let size = Extent3d {
@@ -170,18 +207,25 @@ impl RenderBuddy {
             texture,
             view,
             dimensions: Vec2::new(size.width as f32, size.height as f32),
-            sampler,
+            sampler: *self
+                .default_texture_samplers
+                .get(&texture_sampler_type)
+                .unwrap(),
         }
     }
 
-    /// Replaces the given texture handle
-    /// Useful for hot reloading
-    pub fn replace_texture(&mut self, handle: Handle<Texture>, image: Image) {
-        let texture: Texture =
-            self.add_texture_bytes(&image.data, image.dimensions, image.sampler, image.format);
+    pub(crate) fn replace_texture(&mut self, handle: Handle<Texture>, texture: Texture) {
         *self
             .textures
             .get_mut(handle)
             .expect("No texture to replace") = texture;
+    }
+
+    /// Replaces the given texture handle
+    /// Useful for hot reloading
+    pub fn replace_image(&mut self, handle: Handle<Texture>, image: Image) {
+        let texture: Texture =
+            self.add_texture_bytes(&image.data, image.dimensions, image.sampler, image.format);
+        self.replace_texture(handle, texture)
     }
 }

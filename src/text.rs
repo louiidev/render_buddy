@@ -12,7 +12,7 @@ use crate::{
     font_atlas::FontAtlas,
     fonts::{Font, GlyphAtlasInfo, PositionedGlyph},
     mesh::{
-        AttributeValue, BatchMeshBuild, Mesh, MeshAttribute, Vertex, QUAD_INDICES,
+        AttributeValue, BatchMeshCreator, Mesh, MeshAttribute, Vertex, QUAD_INDICES,
         QUAD_VERTEX_POSITIONS,
     },
     pipeline::Pipeline,
@@ -47,7 +47,32 @@ impl Text {
     }
 }
 
-impl BatchMeshBuild for Text {
+impl RenderBuddy {
+    pub fn measure_text(&mut self, text: &Text) -> Vec2 {
+        let positioned_glyphs = self.get_positioned_glyphs(text, None);
+
+        let size: Vec2 = positioned_glyphs.iter().fold(
+            Vec2::default(),
+            |mut size: Vec2, text_glyph: &PositionedGlyph| {
+                let rect = text_glyph.rect;
+                let glyph_position = text_glyph.position;
+
+                let x_distance = glyph_position.x - size.x;
+                let y_distance = glyph_position.y + size.y;
+                dbg!(y_distance);
+                let actual_glyph_size = rect.size();
+                size.y = size.y.max(actual_glyph_size.y + y_distance.abs() / 2.);
+                size.x += actual_glyph_size.x + x_distance;
+
+                size
+            },
+        );
+        // panic!();
+        size
+    }
+}
+
+impl BatchMeshCreator for Text {
     fn build(&self, mut transform: Transform, rb: &mut RenderBuddy) -> Vec<crate::mesh::Mesh> {
         let positioned_glyphs = rb.get_positioned_glyphs(self, None);
 
@@ -55,7 +80,7 @@ impl BatchMeshBuild for Text {
             Vec2::default(),
             |mut size: Vec2, text_glyph: &PositionedGlyph| {
                 let rect = text_glyph.rect;
-                let glyph_position = text_glyph.position - -Vec2::new(-0.5, -0.5);
+                let glyph_position = text_glyph.position;
 
                 let x_distance = glyph_position.x - size.x;
                 let actual_glyph_size = rect.size();

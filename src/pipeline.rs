@@ -1,11 +1,15 @@
 use std::fmt::Debug;
 
 use wgpu::{
-    BindGroupLayout, BlendState, FragmentState, FrontFace, PolygonMode, PrimitiveState,
-    RenderPipeline, RenderPipelineDescriptor, VertexBufferLayout, VertexState, VertexStepMode,
+    BindGroupLayout, BindingType, BlendState, FragmentState, FrontFace, PolygonMode,
+    PrimitiveState, RenderPipeline, RenderPipelineDescriptor, ShaderStages, TextureFormat,
+    VertexBufferLayout, VertexState, VertexStepMode,
 };
 
-use crate::{material::Material, mesh::get_attribute_layout, RenderBuddy};
+use crate::{
+    bind_groups::BindGroupLayoutBuilder, material::Material, mesh::get_attribute_layout,
+    RenderBuddy,
+};
 
 pub struct Pipeline {
     pub(crate) render_pipeline: RenderPipeline,
@@ -41,17 +45,35 @@ impl RenderBuddy {
         let bind_group_layouts: Vec<BindGroupLayout> =
             material.get_bind_group_layouts(&self.device);
 
+        let texture_bind_group_layout = BindGroupLayoutBuilder::new()
+            .append(
+                ShaderStages::FRAGMENT,
+                BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    sample_type: wgpu::TextureSampleType::Float {
+                        filterable: material.filterable_texture(),
+                    },
+                },
+                None,
+            )
+            .append(
+                ShaderStages::FRAGMENT,
+                BindingType::Sampler(if material.filterable_texture() {
+                    wgpu::SamplerBindingType::Filtering
+                } else {
+                    wgpu::SamplerBindingType::NonFiltering
+                }),
+                None,
+            )
+            .build(&self.device, None);
+
         let mut predefined_bind_group_layouts = if material.has_texture() {
-            vec![
-                &self.camera_bind_group_layout,
-                &self.texture_bind_group_layout,
-            ]
+            vec![&self.camera_bind_group_layout, &texture_bind_group_layout]
         } else {
             vec![&self.camera_bind_group_layout]
         };
         predefined_bind_group_layouts.append(&mut bind_group_layouts.iter().map(|x| &*x).collect());
-
-        dbg!(&predefined_bind_group_layouts);
 
         let render_pipeline_layout =
             self.device
@@ -63,7 +85,10 @@ impl RenderBuddy {
 
         let binding: [Option<wgpu::ColorTargetState>; 1] = [Some(wgpu::ColorTargetState {
             format: self.surface_config.format,
-            blend: Some(BlendState::ALPHA_BLENDING),
+            blend: Some(wgpu::BlendState {
+                color: wgpu::BlendComponent::REPLACE,
+                alpha: wgpu::BlendComponent::REPLACE,
+            }),
             write_mask: wgpu::ColorWrites::ALL,
         })];
 
@@ -88,11 +113,25 @@ impl RenderBuddy {
                 topology: material.topology(),
                 strip_index_format: None,
             },
-            depth_stencil: None,
+            depth_stencil: if material.use_depth_stencil() {
+                Some(wgpu::DepthStencilState {
+                    format: TextureFormat::Depth32Float,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState {
+                        constant: 2, // Corresponds to bilinear filtering
+                        slope_scale: 2.0,
+                        clamp: 0.0,
+                    },
+                })
+            } else {
+                None
+            },
             multisample: wgpu::MultisampleState {
-                count: 1,                         // 2.
-                mask: !0,                         // 3.
-                alpha_to_coverage_enabled: false, // 4.
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
             },
             label: Some(material.label()),
             multiview: None,

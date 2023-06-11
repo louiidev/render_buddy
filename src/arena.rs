@@ -1161,6 +1161,10 @@ impl ArenaId {
     pub const fn first() -> Self {
         ArenaId { uid: 1, idx: 0 }
     }
+
+    pub const fn second() -> Self {
+        ArenaId { uid: 2, idx: 1 }
+    }
 }
 
 impl PartialOrd for ArenaId {

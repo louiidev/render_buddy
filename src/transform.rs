@@ -49,4 +49,12 @@ impl Transform {
             ..Self::IDENTITY
         }
     }
+
+    #[inline]
+    pub const fn from_rotation(rotation: Quat) -> Self {
+        Transform {
+            rotation,
+            ..Self::IDENTITY
+        }
+    }
 }
